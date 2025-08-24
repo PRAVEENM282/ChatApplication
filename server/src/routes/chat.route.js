@@ -1,10 +1,7 @@
 import express from "express";
-import { searchUsers } from "../controllers/user.controller.js";
+import { createChatRoom } from "../controllers/chat.controller.js";
 import { verifyJWT } from "../middlewares/verifyJWT.js";
-
 const router = express.Router();
-
-
-router.get("/search", verifyJWT, searchUsers);
+router.post("/create", verifyJWT, createChatRoom);
 
 export default router;

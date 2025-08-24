@@ -7,6 +7,7 @@ import connectDB from "./config/db.js";
 import authRoutes from "./routes/auth.route.js";
 import cookieParser from "cookie-parser";
 import userRoutes from "./routes/user.route.js";
+import chatRoutes from "./routes/chat.route.js";
 
 const app = express();
 app.use(express.json());
@@ -28,6 +29,8 @@ connectDB();
 app.use("/api/auth", authRoutes);
 
 app.use("/api/users", userRoutes);
+
+app.use("/api/chats", chatRoutes);
 
 const server = http.createServer(app);
 
