@@ -14,6 +14,7 @@ export const registerUser = async (data: RegistrationData) => {
 
   // 2. Securely store the private key in localStorage
   localStorage.setItem("privateKey", privateKeyBase64);
+  
 
   // 3. Call the backend API with the user data and the public key
   const response = await api.post("/api/auth/register", {
