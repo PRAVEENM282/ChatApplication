@@ -1,5 +1,4 @@
 import Chatroom from '../models/Chatroom.js';
-import ChatRoom from '../models/Chatroom.js';
 import User from '../models/User.js';
 import mongoose from 'mongoose';
 

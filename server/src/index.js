@@ -2,18 +2,22 @@ import express from "express";
 import http from "http";
 import { Server } from "socket.io";
 import cors from "cors";
+import jwt from "jsonwebtoken";
+import dotenv from "dotenv";
 import nacl from "tweetnacl";
+
 import connectDB from "./config/db.js";
 import authRoutes from "./routes/auth.route.js";
 import cookieParser from "cookie-parser";
 import userRoutes from "./routes/user.route.js";
 import chatRoutes from "./routes/chat.route.js";
+import { saveMessage } from "./controllers/message.controller.js";
 
 const app = express();
 app.use(express.json());
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 app.use(cookieParser());
-
+dotenv.config();
 app.use(
   cors({
     origin: "http://localhost:5173", // allow frontend origin
@@ -22,7 +26,7 @@ app.use(
 );
 
 app.get("/", (req, res) => {
-  res.send("Hello World");
+  res.send("Chat Application Backend");
 });
 connectDB();
 
