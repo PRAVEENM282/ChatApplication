@@ -1,7 +1,8 @@
 import express from "express";
-import { createChatRoom } from "../controllers/chat.controller.js";
+import { createChatRoom,getChatRooms } from "../controllers/chat.controller.js";
 import { verifyJWT } from "../middlewares/verifyJWT.js";
 const router = express.Router();
-router.post("/create", verifyJWT, createChatRoom);
+router.post("/", verifyJWT, createChatRoom);
+router.get("/", verifyJWT, getChatRooms);
 
 export default router;

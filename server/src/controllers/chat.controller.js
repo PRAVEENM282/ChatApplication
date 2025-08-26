@@ -1,3 +1,4 @@
+import Chatroom from '../models/Chatroom.js';
 import ChatRoom from '../models/Chatroom.js';
 import User from '../models/User.js';
 import mongoose from 'mongoose';
@@ -63,6 +64,19 @@ export const createChatRoom = async (req, res) => {
         res.status(200).json(chatRoom);
     } catch (err) {
         console.error('Error creating chat room:', err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+};
+
+export const getChatRooms = async (req,res) =>{
+    const currentUserId = req.userId;
+
+    try{
+        const chatRooms = await Chatroom.find({participants: currentUserId}).sort({updatedAt: -1}).populate('participants', '-password -refreshToken').populate('lastMessage').exec();
+        res.status(200).json(chatRooms);
+
+    }catch(err){
+        console.error('Error fetching chat rooms:', err);
         res.status(500).json({ message: "Internal server error" });
     }
 };
