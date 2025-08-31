@@ -17,7 +17,7 @@ export const initializeSocketServer = (server) =>{
         if(!token){
             return next(new Error("Authentication error: No token provided"));
         }
-        jwt.verify(token, process.env.JWT_SECRET, (err, decoded)=>{
+        jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded)=>{
         if(err){
             return next(new Error("Authentication error: Invalid token"));
         }

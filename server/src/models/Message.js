@@ -3,7 +3,7 @@ import { Schema } from "mongoose";
 
 const messageSchema = new mongoose.Schema(
   {
-    chatroomId: {
+    chatRoomId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "ChatRoom",
       required: true,

@@ -10,7 +10,6 @@ export const createChatRoom = async (req, res) => {
         return res.status(400).json({ message: "Recipient ID is required" });
     }
 
-    // Prevent creating chat room with self
     if (userId === recipientId) {
         return res.status(400).json({ message: "Cannot create chat room with yourself" });
     }
@@ -21,16 +20,13 @@ export const createChatRoom = async (req, res) => {
             return res.status(404).json({ message: "Recipient not found" });
         }
 
-        // Sort participants by string representation to ensure consistent ordering
         const participants = [userId, recipientId]
             .sort((a, b) => a.toString().localeCompare(b.toString()))
             .map(id => new mongoose.Types.ObjectId(id));
 
-        // Create the participant pair string for querying
         const participantPair = participants.map(p => p.toString()).join('-');
 
-        // First try to find existing chat room using the participantPair
-        let chatRoom = await ChatRoom.findOne({
+        let chatRoom = await Chatroom.findOne({
             participantPair: participantPair
         }).populate('participants', '-password -refreshToken');
 
@@ -39,14 +35,12 @@ export const createChatRoom = async (req, res) => {
                 chatRoom = new ChatRoom({
                     participants: participants,
                     type: 'one_to_one',
-                    // participantPair will be set automatically by pre-save middleware
+
                 });
                 await chatRoom.save();
                 chatRoom = await chatRoom.populate('participants', '-password -refreshToken');
             } catch (saveError) {
-                // Handle duplicate key error (race condition)
                 if (saveError.code === 11000) {
-                    // If duplicate, try to find the existing one again
                     chatRoom = await ChatRoom.findOne({
                         participantPair: participantPair
                     }).populate('participants', '-password -refreshToken');
@@ -78,4 +72,70 @@ export const getChatRooms = async (req,res) =>{
         console.error('Error fetching chat rooms:', err);
         res.status(500).json({ message: "Internal server error" });
     }
+};
+
+export const createGroupChat = async (req, res) => {
+  const { groupname, groupicon, members } = req.body; // members = [userId, ...]
+  if (!groupname || !Array.isArray(members) || members.length < 2)
+    return res.status(400).json({ message: "Group name and at least 2 members required" });
+  try {
+    const participantIds = members.map(id => new mongoose.Types.ObjectId(id));
+    const chatRoom = new Chatroom({
+      participants: participantIds,
+      type: "group",
+      groupname,
+      groupicon
+    });
+    await chatRoom.save();
+    res.status(201).json(chatRoom);
+  } catch (err) {
+    res.status(500).json({ message: "Group chat creation error" });
+  }
+};
+
+export const addGroupMember = async (req, res) => {
+  const { chatRoomId } = req.params;
+  const { userId } = req.body;
+  try {
+    const chatRoom = await Chatroom.findById(chatRoomId);
+    if (!chatRoom) return res.status(404).json({ message: "Group not found" });
+    if (chatRoom.type !== "group") return res.status(400).json({ message: "Not a group chat" });
+    if (!chatRoom.participants.includes(userId)) {
+      chatRoom.participants.push(userId);
+      await chatRoom.save();
+    }
+    res.status(200).json(chatRoom);
+  } catch (err) {
+    res.status(500).json({ message: "Failed to add member" });
+  }
+};
+
+export const removeGroupMember = async (req, res) => {
+  const { chatRoomId } = req.params;
+  const { userId } = req.body;
+  try {
+    const chatRoom = await Chatroom.findById(chatRoomId);
+    if (!chatRoom) return res.status(404).json({ message: "Group not found" });
+    chatRoom.participants = chatRoom.participants.filter(
+      id => id.toString() !== userId
+    );
+    await chatRoom.save();
+    res.status(200).json(chatRoom);
+  } catch (err) {
+    res.status(500).json({ message: "Failed to remove member" });
+  }
+};
+
+export const muteChat = async (req, res) => {
+  const { chatRoomId } = req.params;
+  const userId = req.userId;
+  try {
+    const room = await Chatroom.findById(chatRoomId);
+    if (!room) return res.status(404).json({ message: "Chat not found" });
+    room.mutedBy.addToSet(userId); // ensure no duplicates
+    await room.save();
+    res.status(200).json(room);
+  } catch (err) {
+    res.status(500).json({ message: "Failed to mute chat" });
+  }
 };
