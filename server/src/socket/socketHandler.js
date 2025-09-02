@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 import { Server, Socket } from "socket.io";
-import { saveMessage } from "../controllers/message.controller";
+import { saveMessage } from "../controllers/message.controller.js";
 
 
 export const initializeSocketServer = (server) =>{
@@ -38,7 +38,7 @@ export const initializeSocketServer = (server) =>{
 
             const savedMessage = await saveMessage({chatRoomId, encryptedText, senderId});
             if(savedMessage){
-                socket.to(chatRoomId).emit("receive_message", savedMessage);
+                io.to(chatRoomId).emit("receive_message", savedMessage);
             }
         });
         socket.on("disconnect",()=>{

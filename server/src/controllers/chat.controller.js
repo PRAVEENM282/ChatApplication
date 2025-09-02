@@ -32,7 +32,7 @@ export const createChatRoom = async (req, res) => {
 
         if (!chatRoom) {
             try {
-                chatRoom = new ChatRoom({
+                chatRoom = new Chatroom({
                     participants: participants,
                     type: 'one_to_one',
 
@@ -41,7 +41,7 @@ export const createChatRoom = async (req, res) => {
                 chatRoom = await chatRoom.populate('participants', '-password -refreshToken');
             } catch (saveError) {
                 if (saveError.code === 11000) {
-                    chatRoom = await ChatRoom.findOne({
+                    chatRoom = await Chatroom.findOne({
                         participantPair: participantPair
                     }).populate('participants', '-password -refreshToken');
                     
@@ -75,7 +75,7 @@ export const getChatRooms = async (req,res) =>{
 };
 
 export const createGroupChat = async (req, res) => {
-  const { groupname, groupicon, members } = req.body; // members = [userId, ...]
+  const { groupname, groupicon, members } = req.body; 
   if (!groupname || !Array.isArray(members) || members.length < 2)
     return res.status(400).json({ message: "Group name and at least 2 members required" });
   try {

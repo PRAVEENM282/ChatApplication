@@ -7,23 +7,25 @@ import {
 } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthProvider"; // 👈 Import the provider
 import { AuthPage } from "./features/auth/pages/AuthPage";
-
+import { SocketProvider } from "./context/SocketProvider";
+import ChatsPage from "./features/chat/pages/ChatPage";
 const HomePage = () => {
   const { logout } = useAuth();
+
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-      <h1 className="text-4xl font-bold text-green-600">
-        Welcome to the Chat App!
-        <button
-          onClick={logout}
-          className="mt-4 bg-red-500 text-white font-bold py-2 px-4 rounded"
-        >
-          Logout
-        </button>
-      </h1>
+    <div className="min-h-screen flex flex-col items-center justify-center p-8 bg-white">
+      <h1 className="text-4xl font-bold mb-6">Welcome to the Home Page</h1>
+      <button
+        onClick={logout}
+        className="px-6 py-3 rounded bg-blue-600 text-white text-lg font-semibold hover:bg-blue-700 transition"
+      >
+        Logout
+      </button>
     </div>
   );
 };
+
+
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated } = useAuth();
@@ -39,6 +41,7 @@ function App() {
   return (
     // 👇 Wrap your application with the AuthProvider
     <AuthProvider>
+      <SocketProvider>
       <Router>
         <Routes>
           <Route
@@ -59,7 +62,8 @@ function App() {
           />
         </Routes>
       </Router>
-    </AuthProvider>
+    </SocketProvider>
+  </AuthProvider>
   );
 }
 

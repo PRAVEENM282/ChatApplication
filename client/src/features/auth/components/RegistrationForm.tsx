@@ -24,9 +24,12 @@ export const RegistrationForm = () => {
 
     try {
       const data = await registerUser({ username, email, password });
-      // If registration is successful, log the user in with the new token
       if (data.accessToken) {
         login(data.accessToken);
+        if (data.username && data.userId) {
+          localStorage.setItem("username", data.username);
+          localStorage.setItem("userId", data.userId);
+        }
       }
     } catch (err: any) {
       setError(err.response?.data?.message || "An unexpected error occurred.");

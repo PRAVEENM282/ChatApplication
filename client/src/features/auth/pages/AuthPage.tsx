@@ -4,23 +4,34 @@ import LoginForm from "../components/LoginForm";
 
 export const AuthPage = () => {
   const [isLogin, setIsLogin] = useState(true);
-  return (
-    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <h1 className="text-3xl font-bold text-center text-gray-800 mb-8">
-          Welcome to Secure Chat
-        </h1>
-        {isLogin ? <LoginForm /> : <RegistrationForm />}
 
-        <button
-          onClick={() => {
-            setIsLogin(!isLogin);
-          }}
-        >
-          {isLogin
-            ? "Don't have an account? Register"
-            : "Already have an account? Login"}
-        </button>
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
+      <div className="bg-white rounded-lg shadow-md p-8 w-full max-w-md">
+        {isLogin ? <LoginForm /> : <RegistrationForm />}
+        <div className="mt-6 text-center text-gray-600">
+          {isLogin ? (
+            <>
+              Don't have an account?{" "}
+              <button
+                onClick={() => setIsLogin(false)}
+                className="text-blue-600 hover:underline focus:outline-none"
+              >
+                Register
+              </button>
+            </>
+          ) : (
+            <>
+              Already have an account?{" "}
+              <button
+                onClick={() => setIsLogin(true)}
+                className="text-blue-600 hover:underline focus:outline-none"
+              >
+                Login
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

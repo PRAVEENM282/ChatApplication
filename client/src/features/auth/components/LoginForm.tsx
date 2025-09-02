@@ -19,6 +19,8 @@ export default function LoginForm() {
       const data = await loginUser({ email, password });
       if (data.accessToken) {
         login(data.accessToken);
+        localStorage.setItem("username", data.username);
+        localStorage.setItem("userId", data.userId);
       }
     } catch (err: any) {
       setError(err.response?.data?.message || "An unexpected error occurred.");

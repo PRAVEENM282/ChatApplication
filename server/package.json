@@ -16,7 +16,7 @@
     "express-joi-validation": "^6.1.0",
     "express-mongo-sanitize": "^2.2.0",
     "express-rate-limit": "^8.0.1",
-    "joi": "^18.0.1",
+    "joi": "^17.13.3",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.17.0",
     "morgan": "^1.10.1",

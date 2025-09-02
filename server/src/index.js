@@ -1,12 +1,9 @@
 import dotenv from "dotenv";
 dotenv.config();
-
-// Environment variables validation - ADD THIS BLOCK
 const requiredEnvVars = [
   'MONGODB_URI', 
   'ACCESS_TOKEN_SECRET', 
   'REFRESH_TOKEN_SECRET',
-  'NODE_ENV'
 ];
 
 const missingVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
@@ -26,6 +23,7 @@ import http from "http";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
 import mongoSanitize from "express-mongo-sanitize";
+import morgan from "morgan";
 
 import connectDB from "./config/db.js";
 import authRoutes from "./routes/auth.route.js";
@@ -49,6 +47,12 @@ app.use(mongoSanitize({
     console.warn(`Request sanitized - Field: ${key}`);
   },
 }));
+
+if (process.env.NODE_ENV === "development") {
+  app.use(morgan("dev"));
+}else{
+  app.use(morgan("combined"));
+}
 
 const apiLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,
@@ -83,7 +87,6 @@ app.use((err, req, res, next) => {
     success: false,
     error: {
       message: message,
-      ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
     }
   });
 });

@@ -14,8 +14,6 @@ export const register = async (req, res) => {
   if (!username || !email || !password || !publicKey) {
     return res.status(400).json({ message: "Username, email, password, and public key are required" });
   }
-
-  // ADD PASSWORD VALIDATION HERE
   if (password.length < 8) {
     return res.status(400).json({ 
       message: "Password must be at least 8 characters long" 
@@ -29,7 +27,6 @@ export const register = async (req, res) => {
     });
   }
 
-  // Email validation
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email)) {
     return res.status(400).json({ 
@@ -66,7 +63,7 @@ export const register = async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    res.status(201).json({ message: `New user ${username} created`, accessToken });
+    res.status(201).json({ message: `New user ${username} created`, accessToken, userId: newUserId, username });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Internal server error" });
@@ -84,7 +81,7 @@ export const login = async (req, res) => {
     const foundUser = await User.findOne({ email }).exec();
     const match = foundUser ? await bcrypt.compare(password, foundUser.password) : false;
     if (!foundUser || !match) {
-      return res.status(401).json({ message: "Invalid credentials" }); // Generic message to prevent enumeration
+      return res.status(401).json({ message: "Invalid credentials" }); 
     }
 
     const accessToken = jwt.sign({ userId: foundUser._id }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
@@ -100,7 +97,13 @@ export const login = async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    res.status(200).json({ message: `${foundUser.username} welcome back`, accessToken });
+    // Include username in response here
+    res.status(200).json({ 
+      message: `${foundUser.username} welcome back`, 
+      accessToken, 
+      username: foundUser.username,
+      userId: foundUser._id,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Internal server error" });

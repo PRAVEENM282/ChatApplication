@@ -40,8 +40,9 @@ api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const originalReq = error.config as CustomAxiosRequestConfig;
+    const status = error.response?.status;
 
-    if (error.response?.status === 403 && !originalReq._retry) {
+    if ((status === 401 || status === 403) && !originalReq._retry) {
       if (isRefreshing) {
         // 🕐 Refresh in progress – queue this request
         return new Promise((resolve) => {
