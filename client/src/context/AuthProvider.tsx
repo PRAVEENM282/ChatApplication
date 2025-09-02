@@ -1,11 +1,12 @@
 // src/context/AuthProvider.tsx
 import React, {
   createContext,
-  useState,
   useContext,
   ReactNode,
   useMemo,
+  useEffect,
 } from "react";
+import { useAuthStore } from "../store/authStore";
 
 // Define the shape of the context's value
 interface AuthContextType {
@@ -20,34 +21,18 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Create the provider component
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [accessToken, setAccessToken] = useState<string | null>(() => {
-    // Initialize state from localStorage to keep the user logged in
-    return localStorage.getItem("accessToken");
-  });
-
-  const login = (token: string) => {
-    setAccessToken(token);
-    localStorage.setItem("accessToken", token);
-  };
-
-  const logout = () => {
-    setAccessToken(null);
-    localStorage.removeItem("accessToken");
-    // We will later call the backend's /logout endpoint here
-  };
+  const { accessToken, isAuthenticated, login, logout } = useAuthStore();
 
   // Use useMemo to prevent re-creating the context value on every render
   const authContextValue = useMemo(
     () => ({
       accessToken,
-      isAuthenticated: !!accessToken,
+      isAuthenticated,
       login,
       logout,
     }),
-    [accessToken]
+    [accessToken, isAuthenticated, login, logout]
   );
-
-  //console.log(authContextValue);
 
   return (
     <AuthContext.Provider value={authContextValue}>

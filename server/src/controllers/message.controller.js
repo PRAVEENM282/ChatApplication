@@ -1,6 +1,9 @@
 import Chatroom from "../models/Chatroom.js";
 import Message from "../models/Message.js";
+import { catchAsync, AppError } from "../middlewares/errorHandler.js";
 
+// Note: saveMessage is called by the socket handler, not an Express route,
+// so it doesn't use catchAsync. It should have its own error handling.
 export const saveMessage = async (messageData) => {
   const { chatRoomId, senderId, encryptedText } = messageData; 
   
@@ -18,32 +21,28 @@ export const saveMessage = async (messageData) => {
     return populatedMessage;
   } catch (err) {
     console.error('Error saving message:', err);
+    // Depending on your socket setup, you might want to emit an error back to the user
+    return null; 
   }
 };
 
 
-export const getMessages = async (req, res) => {
+export const getMessages = catchAsync(async (req, res, next) => {
   const { chatRoomId } = req.params;
-  try {
-    const messages = await Message.find({ chatRoomId })
-      .populate("senderId", "username publicKey avatarUrl")
-      .sort({ createdAt: 1 })
-      .exec();
-    res.status(200).json(messages);
-  } catch (err) {
-    res.status(500).json({ message: "Error fetching messages" });
-  }
-};
+  const messages = await Message.find({ chatRoomId })
+    .populate("senderId", "username publicKey avatarUrl")
+    .sort({ createdAt: 1 })
+    .exec();
+  res.status(200).json(messages);
+});
 
-export const markAsRead = async (req, res) => {
+export const markAsRead = catchAsync(async (req, res, next) => {
   const { messageId } = req.params;
-  try {
-    const message = await Message.findById(messageId);
-    if (!message) return res.status(404).json({ message: "Message not found" });
-    message.status = "read";
-    await message.save();
-    res.status(200).json(message);
-  } catch (err) {
-    res.status(500).json({ message: "Failed to update status" });
-  }
-};
+  const message = await Message.findById(messageId);
+  if (!message) return next(new AppError("Message not found", 404));
+  
+  message.status = "read";
+  await message.save();
+  
+  res.status(200).json(message);
+});

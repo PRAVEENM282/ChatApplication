@@ -1,22 +1,21 @@
 import api from "../lib/axios";
 import { generateKeys } from "./crypto.service";
-import { savePrivateKey, getPrivateKey } from "../utils/KeyStorage"; // ensure correct casing
+import { savePrivateKey, getPrivateKey } from "../utils/KeyStorage";
 
-// Define the shape of the registration data
 interface RegistrationData {
   username: string;
   email: string;
   password: string;
 }
 
+// This function now returns the generated keys to the component
 export const registerUser = async (data: RegistrationData) => {
-  // 1. Generate the cryptographic keys on the client
   const { publicKeyBase64, privateKeyBase64 } = await generateKeys();
 
-  // 2. Securely store the private key in IndexedDB using username as ID
+  // Store the key locally right away
   await savePrivateKey(data.username, privateKeyBase64);
 
-  // 3. Call the backend API with the user data and the public key
+  // Call the backend, but only send the PUBLIC key
   const response = await api.post("/api/auth/register", {
     username: data.username,
     email: data.email,
@@ -24,8 +23,8 @@ export const registerUser = async (data: RegistrationData) => {
     publicKey: publicKeyBase64,
   });
 
-  // 4. Return the server's response (which includes the accessToken)
-  return response.data;
+  // Return the server's response AND the private key for the UI to display
+  return { ...response.data, privateKeyBase64 };
 };
 
 interface LoginData {
@@ -33,24 +32,15 @@ interface LoginData {
   password: string;
 }
 
+// Login is now much simpler
 export const loginUser = async (data: LoginData) => {
   const res = await api.post("/api/auth/login", data);
-
-  // Extract username and accessToken from API response
   const { username, accessToken, userId } = res.data;
 
   if (!username || !accessToken || !userId) {
     throw new Error("Login response missing username, userId or access token.");
   }
 
-  // Retrieve private key for this username from IndexedDB (best-effort)
-  // If not found, we still proceed with login so the user can access the app.
-  try {
-    await getPrivateKey(username);
-  } catch (_) {
-    // noop
-  }
-
-  // Return important auth info to caller (e.g., accessToken and username)
+  // We will check for the private key in the component after login.
   return { username, userId, accessToken };
 };

@@ -46,7 +46,7 @@ const Message: React.FC<MessageProps> = ({
       }
     }
     decrypt();
-  }, [encryptedText, senderUsername, currentUsername]);
+  }, [encryptedText, senderId.username, currentUsername]);
 
   const isOwn = senderId.username === currentUsername;
   return (

@@ -1,6 +1,5 @@
 import sodium from "libsodium-wrappers";
 import { getPrivateKey } from "../utils/KeyStorage";
-import { send } from "process";
 
 /**
  * Initialize libsodium - must be awaited once before using crypto functions
@@ -25,20 +24,21 @@ export const generateKeys = async () => {
  * Encrypt a UTF-8 message string with recipient's public key (Base64)
  * Returns encrypted Base64 string
  */
-export const encryptMessage = async (message: string, recipientPublicKeyBase64: string,senderUsername: string) => {
+export const encryptMessage = async (message: string, recipientPublicKeyBase64: string, senderUsername: string) => {
   await sodium.ready;
-  const publicKey = sodium.from_base64(recipientPublicKeyBase64);
-  const nonce = sodium.randombytes_buf(sodium.crypto_box_NONCEBYTES);
-  const messageBytes = sodium.from_string(message);
-  // Encrypt message with nonce and public key, using ephemeral sender keypair
+
   const senderPrivateKeyBase64 = await getPrivateKey(senderUsername);
   if (!senderPrivateKeyBase64) {
-    throw new Error("Sender private key not found");
+    throw new Error("Your private key is not available in this browser. Please log in with your Recovery Key.");
   }
+  
   const senderPrivateKey = sodium.from_base64(senderPrivateKeyBase64);
-  const encrypted = sodium.crypto_box_easy(messageBytes, nonce, publicKey, senderPrivateKey);
+  const recipientPublicKey = sodium.from_base64(recipientPublicKeyBase64);
+  const nonce = sodium.randombytes_buf(sodium.crypto_box_NONCEBYTES);
+  const messageBytes = sodium.from_string(message);
+  
+  const encrypted = sodium.crypto_box_easy(messageBytes, nonce, recipientPublicKey, senderPrivateKey);
 
-  // Return nonce + encrypted combined as Base64 string
   const fullMessage = new Uint8Array(nonce.length + encrypted.length);
   fullMessage.set(nonce);
   fullMessage.set(encrypted, nonce.length);
@@ -50,23 +50,20 @@ export const encryptMessage = async (message: string, recipientPublicKeyBase64: 
  * Decrypt encrypted message (Base64) with own private key (Base64) and sender's public key (Base64)
  * Returns decrypted UTF-8 string
  */
-export const decryptMessage = async (
-  encryptedBase64: string,
-  privateKeyBase64: string,
-  senderPublicKeyBase64: string
-) => {
+export const decryptMessage = async (encryptedBase64: string, currentUsername: string, senderPublicKeyBase64: string) => {
   await sodium.ready;
+  
+  const privateKeyBase64 = await getPrivateKey(currentUsername);
+  if (!privateKeyBase64) {
+    throw new Error("Your private key is not available for decryption. Please log in with your Recovery Key.");
+  }
 
   const encryptedMessage = sodium.from_base64(encryptedBase64);
-
-  // Split nonce and ciphertext
   const nonce = encryptedMessage.slice(0, sodium.crypto_box_NONCEBYTES);
   const ciphertext = encryptedMessage.slice(sodium.crypto_box_NONCEBYTES);
-
   const privateKey = sodium.from_base64(privateKeyBase64);
   const senderPublicKey = sodium.from_base64(senderPublicKeyBase64);
 
-  // Decrypt message
   const decrypted = sodium.crypto_box_open_easy(ciphertext, nonce, senderPublicKey, privateKey);
 
   if (!decrypted) {

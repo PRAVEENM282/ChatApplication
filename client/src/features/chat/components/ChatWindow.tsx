@@ -2,68 +2,97 @@ import React, { useEffect, useRef, useState } from "react";
 import { useChat } from "../hooks/useChat";
 import Message from "./Message";
 import MessageInput from "./MessageInput";
+import { useChatStore } from "../../../store/chatStore";
+import { useSocket } from "../../../context/SocketProvider";
+import { usePresenceStore } from "../../../store/presenceStore";
 
-interface ChatWindowProps {
-  chatRoomId: string;
-  recipientUserId: string;
-  currentUsername: string;
-  recipientUsername: string;
-}
-
-const ChatWindow: React.FC<ChatWindowProps> = ({
-  chatRoomId,
-  recipientUserId,
-  currentUsername,
-  recipientUsername,
-}) => {
-  const { messages } = useChat(chatRoomId);
-  const [loading, setLoading] = useState(true);
+const ChatWindow: React.FC = () => {
+  const socket = useSocket();
+  const { selectedChat, selectedChatUser } = useChatStore();
+  const { onlineUsers } = usePresenceStore();
+  const { messages } = useChat(selectedChat?._id || "");
+  const [typingUser, setTypingUser] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const currentUsername = localStorage.getItem("username") || "";
 
-  // When chatRoomId changes or messages update, manage loading and scroll
-  useEffect(() => {
-    setLoading(true);
-    // Simulate or coordinate with useChat fetching completion
-    // Here we assume fetch is done and loading ends when messages length updated
-    if (messages.length > 0 || !loading) {
-      setLoading(false);
-    }
-  }, [messages, loading, chatRoomId]);
-
-  // Scroll to bottom whenever messages change
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages]);
 
-  return (
-    <div className="chat-window border rounded p-4 max-w-2xl mx-auto flex flex-col h-[600px]">
-      <h2 className="font-bold mb-4 text-xl text-center">Chat with {recipientUsername}</h2>
+  useEffect(() => {
+    if (!socket || !selectedChatUser) return;
 
-      <div className="messages flex-grow overflow-y-auto mb-4 border p-2 rounded bg-gray-50">
-        {loading ? (
-          <div className="text-center text-gray-500 mt-20">Loading messages...</div>
-        ) : messages.length === 0 ? (
-          <div className="text-center text-gray-500 mt-20">No messages yet</div>
-        ) : (
-          messages.map((msg) => (
-            <Message
-              key={msg._id}
-              encryptedText={msg.encryptedText}
-              senderId={msg.senderId}
-              recipientUsername={recipientUsername}
-              currentUsername={currentUsername}
-              createdAt={msg.createdAt}
-            />
-          ))
-        )}
+    const handleUserTyping = ({ userId, chatRoomId }: { userId: string, chatRoomId: string }) => {
+      if (chatRoomId === selectedChat?._id && userId === selectedChatUser._id) {
+        setTypingUser(selectedChatUser.username);
+      }
+    };
+
+    const handleUserStoppedTyping = ({ chatRoomId }: { chatRoomId: string }) => {
+      if (chatRoomId === selectedChat?._id) {
+        setTypingUser(null);
+      }
+    };
+
+    socket.on('user_typing', handleUserTyping);
+    socket.on('user_stopped_typing', handleUserStoppedTyping);
+
+    return () => {
+      socket.off('user_typing', handleUserTyping);
+      socket.off('user_stopped_typing', handleUserStoppedTyping);
+    };
+  }, [socket, selectedChat, selectedChatUser]);
+
+  if (!selectedChat || !selectedChatUser) {
+    return (
+        <div className="h-full flex items-center justify-center text-gray-400">
+            <p>Search or select a chat from the left panel to start messaging</p>
+        </div>
+    );
+  }
+
+  const isRecipientOnline = onlineUsers.has(selectedChatUser._id);
+
+  return (
+    <div className="flex flex-col h-full">
+      <header className="p-4 border-b bg-white sticky top-0 z-10 flex items-center gap-3">
+        <div className="relative">
+            <div className="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center font-bold text-gray-600">
+                {selectedChatUser.username.charAt(0).toUpperCase()}
+            </div>
+            {isRecipientOnline && (
+                <span className="absolute bottom-0 right-0 block h-3 w-3 rounded-full bg-green-500 border-2 border-white" />
+            )}
+        </div>
+        <div>
+            <h2 className="font-semibold text-lg text-gray-800">{selectedChatUser.username}</h2>
+            <p className="text-xs text-gray-500">{isRecipientOnline ? 'Online' : 'Offline'}</p>
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
+        {messages.map((msg) => (
+          <Message
+            key={msg._id}
+            encryptedText={msg.encryptedText}
+            senderId={msg.senderId}
+            recipientUsername={selectedChatUser.username}
+            currentUsername={currentUsername}
+            createdAt={msg.createdAt}
+          />
+        ))}
         <div ref={messagesEndRef} />
       </div>
 
+      <div className="h-6 px-4 text-sm text-gray-500 italic">
+        {typingUser && `${typingUser} is typing...`}
+      </div>
+
       <MessageInput
-        chatRoomId={chatRoomId}
-        recipientId={recipientUserId}
+        chatRoomId={selectedChat._id}
+        recipientId={selectedChatUser._id}
         senderUsername={currentUsername}
       />
     </div>
