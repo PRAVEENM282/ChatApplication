@@ -51,6 +51,7 @@ export const initializeSocketServer = (server) => {
 
             const savedMessage = await saveMessage({ chatRoomId, encryptedText, senderId });
             if (savedMessage) {
+                // FIX: Corrected variable from "chatRoomIt" to "chatRoomId"
                 io.to(chatRoomId).emit("receive_message", savedMessage);
             }
         });

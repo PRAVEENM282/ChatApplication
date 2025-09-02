@@ -38,7 +38,7 @@ export const register = catchAsync(async (req, res, next) => {
   });
 
   res.cookie("jwt", refreshToken, cookieOptions);
-
+  
   res.status(201).json({ message: `New user ${username} created`, accessToken, userId: newUserId, username });
 });
 

@@ -4,6 +4,7 @@ import { fetchChatMessages } from "../../../services/chat.service";
 
 interface Message {
   _id: string;
+  text:string,
   encryptedText: string;
   senderId: { username: string; _id: string };
   createdAt: string;

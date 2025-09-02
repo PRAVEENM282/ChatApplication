@@ -24,10 +24,9 @@ export const generateKeys = async () => {
  * Encrypt a UTF-8 message string with recipient's public key (Base64)
  * Returns encrypted Base64 string
  */
-export const encryptMessage = async (message: string, recipientPublicKeyBase64: string, senderUsername: string) => {
+export const encryptMessage = async (message: string, recipientPublicKeyBase64: string, senderPrivateKeyBase64: string) => {
   await sodium.ready;
 
-  const senderPrivateKeyBase64 = await getPrivateKey(senderUsername);
   if (!senderPrivateKeyBase64) {
     throw new Error("Your private key is not available in this browser. Please log in with your Recovery Key.");
   }
@@ -50,10 +49,11 @@ export const encryptMessage = async (message: string, recipientPublicKeyBase64: 
  * Decrypt encrypted message (Base64) with own private key (Base64) and sender's public key (Base64)
  * Returns decrypted UTF-8 string
  */
-export const decryptMessage = async (encryptedBase64: string, currentUsername: string, senderPublicKeyBase64: string) => {
+export const decryptMessage = async (encryptedBase64: string, privateKeyBase64: string, senderPublicKeyBase64: string) => {
   await sodium.ready;
   
-  const privateKeyBase64 = await getPrivateKey(currentUsername);
+  // FIX: Removed the incorrect, redundant call to getPrivateKey.
+  // It now uses the privateKeyBase64 passed as an argument.
   if (!privateKeyBase64) {
     throw new Error("Your private key is not available for decryption. Please log in with your Recovery Key.");
   }

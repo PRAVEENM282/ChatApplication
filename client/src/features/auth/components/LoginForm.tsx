@@ -1,19 +1,12 @@
 import React, { useState } from "react";
 import { useAuth } from "../../../context/AuthProvider";
 import { loginUser } from "../../../services/auth.service";
-import { getPrivateKey } from "../../../utils/KeyStorage";
-import RecoveryKeyForm from "./RecoveryKeyForm"; // Import the new component
 
 export default function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  
-  // --- New state to handle recovery key flow ---
-  const [needsRecoveryKey, setNeedsRecoveryKey] = useState(false);
-  const [loggedInUsername, setLoggedInUsername] = useState("");
-
   const { login } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -24,22 +17,9 @@ export default function LoginForm() {
     try {
       const data = await loginUser({ email, password });
       if (data.accessToken) {
-        // Check if the private key exists for this user in this browser
-        const privateKey = await getPrivateKey(data.username);
-        if (privateKey) {
-          // Key exists, log in directly
-          login(data.accessToken);
-          localStorage.setItem("username", data.username);
-          localStorage.setItem("userId", data.userId);
-        } else {
-          // Key MISSING. Prompt user for it.
-          setLoggedInUsername(data.username);
-          setNeedsRecoveryKey(true);
-           // We still need to set these for the recovery form to work with the socket
-          localStorage.setItem("accessToken", data.accessToken); 
-          localStorage.setItem("userId", data.userId);
-          localStorage.setItem("username", data.username);
-        }
+        login(data.accessToken);
+        localStorage.setItem("username", data.username);
+        localStorage.setItem("userId", data.userId);
       }
     } catch (err: any) {
       setError(err.response?.data?.message || "An unexpected error occurred.");
@@ -47,18 +27,6 @@ export default function LoginForm() {
       setIsLoading(false);
     }
   };
-  
-  const handleRecoverySuccess = () => {
-      const token = localStorage.getItem("accessToken");
-      if (token) {
-        login(token); // Finalize login state
-      }
-  };
-
-  // If we need the recovery key, render that form instead
-  if (needsRecoveryKey) {
-    return <RecoveryKeyForm username={loggedInUsername} onSuccess={handleRecoverySuccess} />;
-  }
 
   return (
     <div className="w-full">

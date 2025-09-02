@@ -7,7 +7,6 @@ import { fetchUserPublicKey } from "../../../services/user.service";
 interface MessageProps {
   encryptedText: string;
   senderId: { username: string; _id: string };
-  recipientUsername: string;
   currentUsername: string;
   createdAt: string;
 }
@@ -15,49 +14,68 @@ interface MessageProps {
 const Message: React.FC<MessageProps> = ({
   encryptedText,
   senderId,
-  recipientUsername,
   currentUsername,
-  createdAt
+  createdAt,
 }) => {
-  const [decryptedText, setDecryptedText] = useState("Decrypting...");
+  const isOwn = senderId.username === currentUsername;
+  
+  // If the message is our own, the 'encryptedText' is actually the plaintext.
+  // If it's a received message, we'll start with a placeholder.
+  const [decryptedText, setDecryptedText] = useState(isOwn ? encryptedText : "...");
 
   useEffect(() => {
-    async function decrypt() {
+    // We only need to decrypt messages received from others.
+    if (isOwn) {
+      return;
+    }
+
+    async function decryptReceivedMessage() {
       try {
-        // Load own private key from IndexedDB
-        const privateKey = await getPrivateKey(currentUsername);
-        if (!privateKey) {
-          setDecryptedText("[Private key missing]");
+        const viewerPrivateKey = await getPrivateKey(currentUsername);
+        if (!viewerPrivateKey) {
+          setDecryptedText("[Key Not Found]");
           return;
         }
 
-        // Fetch sender's public key from backend
         const senderPublicKey = await fetchUserPublicKey(senderId._id);
         if (!senderPublicKey) {
-          setDecryptedText("[Sender public key missing]");
+          setDecryptedText("[Sender Key Not Found]");
           return;
         }
 
-        const decrypted = await decryptMessage(encryptedText, privateKey, senderPublicKey);
+        const decrypted = await decryptMessage(
+          encryptedText,
+          viewerPrivateKey,
+          senderPublicKey
+        );
+        
         setDecryptedText(decrypted);
+
       } catch (err) {
-        setDecryptedText("[Decryption failed]");
+        setDecryptedText("[Decryption Failed]");
         console.error("Decryption error:", err);
       }
     }
-    decrypt();
-  }, [encryptedText, senderId.username, currentUsername]);
 
-  const isOwn = senderId.username === currentUsername;
+    decryptReceivedMessage();
+
+  }, [encryptedText, senderId._id, currentUsername, isOwn]);
+
   return (
-  <div className={`message p-2 mb-2 rounded shadow-sm max-w-[75%] ${isOwn ? "ml-auto bg-blue-50 border-blue-200" : "mr-auto bg-white border"}`}>
-    <div className="flex justify-between items-center text-xs text-gray-500 mb-1">
-      <strong>{senderId.username}</strong>
-      <span>{dayjs(createdAt).format("HH:mm")}</span>
+    <div
+      className={`message p-2 mb-2 rounded shadow-sm max-w-[75%] ${
+        isOwn
+          ? "ml-auto bg-blue-50 border-blue-200"
+          : "mr-auto bg-white border"
+      }`}
+    >
+      <div className="flex justify-between items-center text-xs text-gray-500 mb-1">
+        <strong>{senderId.username}</strong>
+        <span>{dayjs(createdAt).format("HH:mm")}</span>
+      </div>
+      <div className="text-gray-800">{decryptedText}</div>
     </div>
-    <div className="text-gray-800">{decryptedText}</div>
-  </div>
-);
+  );
 };
 
 export default Message;

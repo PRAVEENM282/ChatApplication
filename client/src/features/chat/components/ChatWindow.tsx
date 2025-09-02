@@ -78,7 +78,6 @@ const ChatWindow: React.FC = () => {
             key={msg._id}
             encryptedText={msg.encryptedText}
             senderId={msg.senderId}
-            recipientUsername={selectedChatUser.username}
             currentUsername={currentUsername}
             createdAt={msg.createdAt}
           />

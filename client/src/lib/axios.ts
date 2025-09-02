@@ -101,4 +101,15 @@ api.interceptors.response.use(
   }
 );
 
+api.interceptors.request.use(
+  (config) => {
+    // Only attach CSRF token if we have one
+    if (csrfToken) {
+      config.headers["X-CSRF-Token"] = csrfToken;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
 export default api;
