@@ -1,70 +1,45 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { io, Socket } from "socket.io-client";
-import { useAuth } from "./AuthProvider";
-import { usePresenceStore } from "../store/presenceStore"; // Import presence store
+import React, { createContext, useContext, useEffect, ReactNode } from "react";
+import { socket } from "../lib/socket"; // 🔹 The socket instance we made in socket.ts
+import { useAuth } from "./AuthProvider"; // 🔹 Hook to get authentication state (user logged in or not)
 
-interface SocketContextType {
-  socket: Socket | null;
-}
+// 1️⃣ Create a Context to hold the socket object.
+//    This is like an "empty box" that we’ll fill with the socket.
+const SocketContext = createContext(socket);
 
-const SocketContext = createContext<SocketContextType>({ socket: null });
-
-export const SocketProvider = ({ children }: { children: ReactNode }) => {
-  const { accessToken, logout } = useAuth();
-  const [socket, setSocket] = useState<Socket | null>(null);
-  const { setOnlineUsers, addUser, removeUser } = usePresenceStore(); // Get actions from presence store
-
-  useEffect(() => {
-    if (!accessToken) {
-      if (socket) {
-        socket.disconnect();
-      }
-      setSocket(null);
-      return;
-    }
-
-    const newSocket = io("http://localhost:3000", {
-      auth: { token: accessToken },
-      withCredentials: true,
-    });
-
-    newSocket.on("connect_error", (err) => {
-      console.error("Socket connection error:", err.message);
-      if (err.message === "Authentication error") {
-        logout();
-      }
-    });
-
-    // --- PRESENCE EVENT LISTENERS ---
-    newSocket.on('online_users', (userIds: string[]) => {
-      setOnlineUsers(userIds);
-    });
-
-    newSocket.on('user_online', (userId: string) => {
-      addUser(userId);
-    });
-
-    newSocket.on('user_offline', (userId: string) => {
-      removeUser(userId);
-    });
-
-    setSocket(newSocket);
-
-    return () => {
-      newSocket.off('online_users');
-      newSocket.off('user_online');
-      newSocket.off('user_offline');
-      newSocket.disconnect();
-    };
-  }, [accessToken, logout, setOnlineUsers, addUser, removeUser]);
-
-  return <SocketContext.Provider value={{ socket }}>{children}</SocketContext.Provider>;
+// 2️⃣ Custom hook so other components can easily grab the socket from Context.
+//    Instead of writing useContext(SocketContext) everywhere, we just call useSocket().
+export const useSocket = () => {
+  return useContext(SocketContext);
 };
 
-export const useSocket = () => {
-  const context = useContext(SocketContext);
-  if (!context) {
-    throw new Error("useSocket must be used within a SocketProvider");
-  }
-  return context.socket;
+// 3️⃣ Define the Provider that will wrap around your app.
+//    It’s responsible for connecting/disconnecting the socket based on auth state.
+export const SocketProvider = ({ children }: { children: ReactNode }) => {
+  // 🔹 Get the current auth info (is user logged in? do we have an accessToken?)
+  const { accessToken, isAuthenticated } = useAuth();
+
+  // 4️⃣ Side-effect: Manage socket connection when auth state changes
+  useEffect(() => {
+    if (isAuthenticated && accessToken) {
+      // 🔹 Attach the token to the socket BEFORE connecting (for server auth)
+      socket.auth = { token: accessToken };
+
+      // 🔹 Manually connect the socket (since we disabled autoConnect in socket.ts)
+      socket.connect();
+    }
+
+    // 🔹 Cleanup function:
+    // When the component unmounts OR auth state changes (like user logs out),
+    // this will automatically run and disconnect the socket.
+    return () => {
+      socket.disconnect();
+    };
+  }, [isAuthenticated, accessToken]);
+  // 🔹 Runs whenever login/logout happens, or token changes.
+
+  // 5️⃣ Provide the socket object to the rest of the app.
+  //    Any component inside <SocketProvider> can now call useSocket() and use this socket instance.
+  return (
+    <SocketContext.Provider value={socket}>{children}</SocketContext.Provider>
+  );
 };

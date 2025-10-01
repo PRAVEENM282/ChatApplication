@@ -1,101 +1,376 @@
-import React, { useEffect, useRef, useState } from "react";
-import { useChat } from "../hooks/useChat";
-import Message from "./Message";
-import MessageInput from "./MessageInput";
-import { useChatStore } from "../../../store/chatStore";
+import React, { useState, useEffect, useRef } from "react";
+import { ChatRoom, Message as MessageType } from "../../../types";
 import { useSocket } from "../../../context/SocketProvider";
-import { usePresenceStore } from "../../../store/presenceStore";
+import { useAuth } from "../../../context/AuthProvider";
+import { usePresence } from "../../../context/PresenceProvider";
+import { Message } from "./Message";
+import { decryptMessage } from "../../../services/crypto.service";
+import { MessageInput } from "./MessageInput";
+import { getChatMessages } from "../../../services/chat.service"; // Import the new function
 
-const ChatWindow: React.FC = () => {
+interface ChatWindowProps {
+  chatRoom: ChatRoom;
+  onOptimisticUpdate: (chatroomId: string, message: MessageType) => void;
+}
+
+export const ChatWindow: React.FC<ChatWindowProps> = ({
+  chatRoom,
+  onOptimisticUpdate,
+}) => {
+  const [messages, setMessages] = useState<MessageType[]>([]);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const socket = useSocket();
-  const { selectedChat, selectedChatUser } = useChatStore();
-  const { onlineUsers } = usePresenceStore();
-  const { messages } = useChat(selectedChat?._id || "");
-  const [typingUser, setTypingUser] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const currentUsername = localStorage.getItem("username") || "";
+  const { user } = useAuth();
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const { onlineUsers } = usePresence();
 
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
+
+  // Reset messages when chat room changes
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    setMessages([]);
+  }, [chatRoom._id]);
+
+  // NEW: Fetch historical messages when entering a chat room
+  useEffect(() => {
+    const fetchHistoricalMessages = async () => {
+      if (!chatRoom._id || !user) return;
+
+      setIsLoadingMessages(true);
+      try {
+        
+        const historicalMessages = await getChatMessages(chatRoom._id);
+
+        const decryptedMessages: MessageType[] = [];
+
+        for (const msg of historicalMessages) {
+          try {
+            let decryptedText = "";
+
+            // If it's our own message, we might be able to decrypt it
+            // or we might want to store the plaintext differently
+            if (msg.sender._id === user._id) {
+              // For own messages, you might want to store/retrieve differently
+              // For now, we'll try to decrypt using own keys (this might not work with current setup)
+              const myPrivateKey = localStorage.getItem("privateKey");
+              if (myPrivateKey) {
+                const { ciphertextBase64, nonceBase64 } = JSON.parse(
+                  msg.encryptedTextForSender
+                );
+                decryptedText = await decryptMessage(
+                  ciphertextBase64,
+                  nonceBase64,
+                  msg.sender.publicKey,
+                  myPrivateKey
+                );
+              }
+            } else {
+              // Decrypt messages from others
+              const myPrivateKey = localStorage.getItem("privateKey");
+              if (myPrivateKey) {
+                const { ciphertextBase64, nonceBase64 } = JSON.parse(
+                  msg.encryptedTextForRecipient
+                );
+                decryptedText = await decryptMessage(
+                  ciphertextBase64,
+                  nonceBase64,
+                  msg.sender.publicKey,
+                  myPrivateKey
+                );
+              }
+            }
+
+            decryptedMessages.push({
+              _id: msg._id,
+              chatroomId: msg.chatroomId,
+              sender: msg.sender,
+              encryptedTextForRecipient: msg.encryptedTextForRecipient,
+              encryptedTextForSender: msg.encryptedTextForSender,
+              text: decryptedText,
+              createdAt: msg.createdAt,
+              status: msg.status || "sent",
+            });
+          } catch (decryptError) {
+            console.error(
+              "Failed to decrypt historical message:",
+              decryptError
+            );
+            // Add message with error indicator
+            decryptedMessages.push({
+              _id: msg._id,
+              chatroomId: msg.chatroomId,
+              sender: msg.sender,
+              encryptedTextForRecipient: msg.encryptedTextForRecipient,
+              encryptedTextForSender: msg.encryptedTextForSender,
+              text: "[Failed to decrypt]",
+              createdAt: msg.createdAt,
+              status: msg.status || "sent",
+            });
+          }
+        }
+
+        setMessages(decryptedMessages);
+      } catch (error) {
+        console.error("Error fetching historical messages:", error);
+      } finally {
+        setIsLoadingMessages(false);
+      }
+    };
+
+    fetchHistoricalMessages();
+  }, [chatRoom._id, user]);
+
+  // Join & Leave Room
+  useEffect(() => {
+    if (chatRoom._id && socket) {
+      socket.emit("join_room", chatRoom._id);
     }
+
+    return () => {
+      if (chatRoom._id && socket) {
+        socket.emit("leave_room", chatRoom._id);
+      }
+    };
+  }, [chatRoom._id, socket]);
+
+  // Listen for incoming messages (real-time)
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleReceiveMessage = async (savedMessage: any) => {
+
+      // Skip messages sent by self (already added locally via onNewMessage)
+      if (savedMessage.sender._id === user?._id) {
+        return;
+      }
+
+      try {
+        const myPrivateKey = localStorage.getItem("privateKey");
+        if (!myPrivateKey) {
+          console.warn("No private key found — cannot decrypt.");
+          return;
+        }
+
+        const { ciphertextBase64, nonceBase64 } = JSON.parse(
+          savedMessage.encryptedTextForRecipient
+        );
+
+        const plaintext = await decryptMessage(
+          ciphertextBase64,
+          nonceBase64,
+          savedMessage.sender.publicKey,
+          myPrivateKey
+        );
+
+        const newMessage: MessageType = {
+          _id: savedMessage._id,
+          chatroomId: savedMessage.chatroomId,
+          sender: savedMessage.sender,
+          encryptedTextForRecipient: savedMessage.encryptedTextForRecipient,
+          encryptedTextForSender: savedMessage.encryptedTextForSender,
+          text: plaintext,
+          createdAt: savedMessage.createdAt,
+          status: savedMessage.status || "sent",
+        };
+
+        // Add message with deduplication check
+        setMessages((prev) => {
+          if (prev.some((msg) => msg._id === newMessage._id)) {
+            return prev;
+          }
+          return [...prev, newMessage];
+        });
+      } catch (e) {
+        console.error("Failed to decrypt incoming message:", e, savedMessage);
+      }
+    };
+
+    socket.on("receive_message", handleReceiveMessage);
+    return () => {
+      socket.off("receive_message", handleReceiveMessage);
+    };
+  }, [socket, user?._id]);
+
+  // Auto-scroll
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   useEffect(() => {
-    if (!socket || !selectedChatUser) return;
+    if (!socket) return;
 
-    const handleUserTyping = ({ userId, chatRoomId }: { userId: string, chatRoomId: string }) => {
-      if (chatRoomId === selectedChat?._id && userId === selectedChatUser._id) {
-        setTypingUser(selectedChatUser.username);
+    const handleUserTyping = (data: { userId: string; chatroomId: string }) => {
+      if (data.chatroomId === chatRoom._id) {
+        setTypingUsers((prev) => [...new Set([...prev, data.userId])]);
       }
     };
 
-    const handleUserStoppedTyping = ({ chatRoomId }: { chatRoomId: string }) => {
-      if (chatRoomId === selectedChat?._id) {
-        setTypingUser(null);
+    const handleUserStoppedTyping = (data: {
+      userId: string;
+      chatroomId: string;
+    }) => {
+      if (data.chatroomId === chatRoom._id) {
+        setTypingUsers((prev) => prev.filter((id) => id !== data.userId));
       }
     };
 
-    socket.on('user_typing', handleUserTyping);
-    socket.on('user_stopped_typing', handleUserStoppedTyping);
+    socket.on("user_typing", handleUserTyping);
+    socket.on("user_stopped_typing", handleUserStoppedTyping);
 
     return () => {
-      socket.off('user_typing', handleUserTyping);
-      socket.off('user_stopped_typing', handleUserStoppedTyping);
+      socket.off("user_typing", handleUserTyping);
+      socket.off("user_stopped_typing", handleUserStoppedTyping);
     };
-  }, [socket, selectedChat, selectedChatUser]);
+  }, [socket, chatRoom._id]);
 
-  if (!selectedChat || !selectedChatUser) {
-    return (
-        <div className="h-full flex items-center justify-center text-gray-400">
-            <p>Search or select a chat from the left panel to start messaging</p>
-        </div>
+  const otherParticipant = chatRoom.participants.find(
+    (p) => p._id !== user?._id
+  );
+  const isOnline = otherParticipant
+    ? onlineUsers.has(otherParticipant._id)
+    : false;
+
+  const typingIndicatorText = () => {
+    const typingParticipant = chatRoom.participants.find(
+      (p) => p._id === typingUsers[0]
     );
-  }
+    if (typingParticipant) {
+      return `${typingParticipant.username} is typing...`;
+    }
+    return null;
+  };
 
-  const isRecipientOnline = onlineUsers.has(selectedChatUser._id);
+  const handleNewMessage = (msg: MessageType) => {
+    setMessages((prev) => [...prev, msg]);
+  };
+
+  useEffect(() => {
+    if (!socket || !user) return;
+
+    const handleStatusUpdate = ({
+      messageId,
+      status,
+    }: {
+      messageId: string;
+      status: "delivered" | "read";
+    }) => {
+      setMessages((prev) =>
+        prev.map((msg) => (msg._id === messageId ? { ...msg, status } : msg))
+      );
+    };
+
+    const handleMessagesRead = ({ chatroomId }: { chatroomId: string }) => {
+      if (chatroomId === chatRoom._id) {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.sender._id === user._id ? { ...msg, status: "read" } : msg
+          )
+        );
+      }
+    };
+
+    socket.on("message_status_updated", handleStatusUpdate);
+    socket.on("messages_read_by_recipient", handleMessagesRead);
+
+    return () => {
+      socket.off("message_status_updated", handleStatusUpdate);
+      socket.off("messages_read_by_recipient", handleMessagesRead);
+    };
+  }, [socket, user, chatRoom._id]);
+
+  // ✅ This useEffect handles SENDING confirmations when YOU receive/read messages
+  useEffect(() => {
+    if (!socket || !user) return;
+
+    // Confirm delivery of received messages
+    messages.forEach((msg) => {
+      if (
+        msg.sender._id !== user._id &&
+        msg.status !== "delivered" &&
+        msg.status !== "read"
+      ) {
+        socket.emit("message_delivered", {
+          messageId: msg._id,
+          senderId: msg.sender._id,
+        });
+        // Optimistically update the local state as well
+        setMessages((prev) =>
+          prev.map((m) =>
+            m._id === msg._id ? { ...m, status: "delivered" } : m
+          )
+        );
+      }
+    });
+
+    // Confirm reading of messages
+    const otherParticipant = chatRoom.participants.find(
+      (p) => p._id !== user._id
+    );
+    if (otherParticipant) {
+      const unreadMessagesExist = messages.some(
+        (m) => m.sender._id !== user._id && m.status !== "read"
+      );
+      if (unreadMessagesExist) {
+        socket.emit("messages_read", {
+          chatroomId: chatRoom._id,
+          readerId: user._id,
+        });
+      }
+    }
+  }, [messages, socket, user, chatRoom.participants, chatRoom._id]);
 
   return (
-    <div className="flex flex-col h-full">
-      <header className="p-4 border-b bg-white sticky top-0 z-10 flex items-center gap-3">
-        <div className="relative">
-            <div className="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center font-bold text-gray-600">
-                {selectedChatUser.username.charAt(0).toUpperCase()}
+    <div className="flex-1 flex flex-col h-full">
+      {" "}
+      {/* Add h-full */}
+      {/* Header */}
+      <div className="p-4 border-b border-gray-300 bg-gray-100 flex-shrink-0">
+        {" "}
+        {/* Add flex-shrink-0 */}
+        <h2 className="text-xl font-bold">
+          {otherParticipant?.username || "Chat"}
+        </h2>
+        {isOnline && <p className="text-xs text-green-600">Online</p>}
+      </div>
+      {/* Messages Container - This should be the scrollable area */}
+      <div className="flex-1 overflow-y-auto bg-gray-200 min-h-0">
+        {" "}
+        {/* Add min-h-0 and remove p-4 */}
+        <div className="p-4">
+          {" "}
+          {/* Move padding to inner div */}
+          {isLoadingMessages ? (
+            <div className="flex items-center justify-center h-full text-gray-500">
+              Loading messages...
             </div>
-            {isRecipientOnline && (
-                <span className="absolute bottom-0 right-0 block h-3 w-3 rounded-full bg-green-500 border-2 border-white" />
-            )}
+          ) : messages.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-gray-500">
+              No messages yet. Start the conversation!
+            </div>
+          ) : (
+            messages.map((msg) => <Message key={msg._id} message={msg} />)
+          )}
+          {/* ✅ 4. Render the typing indicator */}
+          {typingUsers.length > 0 && (
+            <div className="flex justify-start mb-3">
+              <div className="bg-gray-100 text-gray-500 px-4 py-2 rounded-xl rounded-bl-none animate-pulse">
+                {typingIndicatorText()}
+              </div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
         </div>
-        <div>
-            <h2 className="font-semibold text-lg text-gray-800">{selectedChatUser.username}</h2>
-            <p className="text-xs text-gray-500">{isRecipientOnline ? 'Online' : 'Offline'}</p>
-        </div>
-      </header>
-
-      <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
-        {messages.map((msg) => (
-          <Message
-            key={msg._id}
-            encryptedText={msg.encryptedText}
-            senderId={msg.senderId}
-            currentUsername={currentUsername}
-            createdAt={msg.createdAt}
-          />
-        ))}
-        <div ref={messagesEndRef} />
       </div>
-
-      <div className="h-6 px-4 text-sm text-gray-500 italic">
-        {typingUser && `${typingUser} is typing...`}
+      {/* Message Input - Fixed at bottom */}
+      <div className="flex-shrink-0">
+        {" "}
+        {/* Add flex-shrink-0 */}
+        <MessageInput
+          chatRoom={chatRoom}
+          onNewMessage={handleNewMessage}
+          onOptimisticUpdate={onOptimisticUpdate}
+        />
       </div>
-
-      <MessageInput
-        chatRoomId={selectedChat._id}
-        recipientId={selectedChatUser._id}
-        senderUsername={currentUsername}
-      />
     </div>
   );
 };
-
-export default ChatWindow;

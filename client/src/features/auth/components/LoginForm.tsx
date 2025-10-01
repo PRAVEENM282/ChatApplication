@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React from "react";
+import { useState } from "react";
 import { useAuth } from "../../../context/AuthProvider";
 import { loginUser } from "../../../services/auth.service";
 
@@ -18,8 +19,6 @@ export default function LoginForm() {
       const data = await loginUser({ email, password });
       if (data.accessToken) {
         login(data.accessToken);
-        localStorage.setItem("username", data.username);
-        localStorage.setItem("userId", data.userId);
       }
     } catch (err: any) {
       setError(err.response?.data?.message || "An unexpected error occurred.");

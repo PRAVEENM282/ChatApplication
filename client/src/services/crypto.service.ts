@@ -1,74 +1,100 @@
 import sodium from "libsodium-wrappers";
-import { getPrivateKey } from "../utils/KeyStorage";
+import { decodeKey } from "../utils/keyUtils";
 
-/**
- * Initialize libsodium - must be awaited once before using crypto functions
- */
-export const initializeSodium = async () => {
-  await sodium.ready;
-};
+// --- Encryption ---
 
-/**
- * Generate a new public/private keypair in Base64 encoding
- */
-export const generateKeys = async () => {
+export const encryptMessage = async (
+  message: string,
+  recipientPublicKeyBase64: string,
+  myPrivateKeyBase64: string
+) => {
   await sodium.ready;
-  const keypair = sodium.crypto_box_keypair();
+
+  // Decode keys once at boundary
+  let recipientPublicKey, myPrivateKey;
+
+  // --- ✅ New Debugging Logic ---
+  // We'll check each key individually to find the invalid one.
+  try {
+    recipientPublicKey = decodeKey(recipientPublicKeyBase64);
+  } catch (e) {
+    console.error(
+      "❌ FAILED TO DECODE RECIPIENT'S PUBLIC KEY. It is not a valid Base64 string.",
+      { key: "recipientPublicKeyBase64" }
+    );
+    throw new Error("Invalid recipient public key format.");
+  }
+  if (recipientPublicKey.length !== sodium.crypto_box_PUBLICKEYBYTES) {
+    throw new Error("Recipient public key must be 32 bytes.");
+  }
+
+  try {
+    myPrivateKey = decodeKey(myPrivateKeyBase64);
+  } catch (e) {
+    console.error(
+      "❌ FAILED TO DECODE YOUR PRIVATE KEY. It is not a valid Base64 string. Try clearing localStorage and logging in again.",
+      { key: "myPrivateKeyBase64" }
+    );
+    throw new Error("Invalid private key format.");
+  }
+
+  if (myPrivateKey.length !== sodium.crypto_box_SECRETKEYBYTES) {
+    throw new Error("Private key must be 32 bytes.");
+  }
+
+  // --- End of Debugging Logic ---
+
+  // Unique random nonce for this message
+  const nonce = sodium.randombytes_buf(sodium.crypto_box_NONCEBYTES);
+
+  // Encrypt (message → Uint8Array first)
+  const ciphertext = sodium.crypto_box_easy(
+    sodium.from_string(message),
+    nonce,
+    recipientPublicKey,
+    myPrivateKey
+  );
+
   return {
-    publicKeyBase64: sodium.to_base64(keypair.publicKey),
-    privateKeyBase64: sodium.to_base64(keypair.privateKey),
+    ciphertextBase64: sodium.to_base64(ciphertext),
+    nonceBase64: sodium.to_base64(nonce),
   };
 };
 
-/**
- * Encrypt a UTF-8 message string with recipient's public key (Base64)
- * Returns encrypted Base64 string
- */
-export const encryptMessage = async (message: string, recipientPublicKeyBase64: string, senderPrivateKeyBase64: string) => {
+// --- Decryption ---
+
+export const decryptMessage = async (
+  ciphertextBase64: string,
+  nonceBase64: string,
+  senderPublicKeyBase64: string,
+  myPrivateKeyBase64: string
+) => {
   await sodium.ready;
 
-  if (!senderPrivateKeyBase64) {
-    throw new Error("Your private key is not available in this browser. Please log in with your Recovery Key.");
+  const ciphertext = sodium.from_base64(ciphertextBase64);
+  const nonce = sodium.from_base64(nonceBase64);
+  const senderPublicKey = decodeKey(senderPublicKeyBase64);
+  const myPrivateKey = decodeKey(myPrivateKeyBase64);
+
+  if (senderPublicKey.length !== sodium.crypto_box_PUBLICKEYBYTES) {
+    throw new Error("Sender public key must be 32 bytes.");
   }
-  
-  const senderPrivateKey = sodium.from_base64(senderPrivateKeyBase64);
-  const recipientPublicKey = sodium.from_base64(recipientPublicKeyBase64);
-  const nonce = sodium.randombytes_buf(sodium.crypto_box_NONCEBYTES);
-  const messageBytes = sodium.from_string(message);
-  
-  const encrypted = sodium.crypto_box_easy(messageBytes, nonce, recipientPublicKey, senderPrivateKey);
-
-  const fullMessage = new Uint8Array(nonce.length + encrypted.length);
-  fullMessage.set(nonce);
-  fullMessage.set(encrypted, nonce.length);
-
-  return sodium.to_base64(fullMessage);
-};
-
-/**
- * Decrypt encrypted message (Base64) with own private key (Base64) and sender's public key (Base64)
- * Returns decrypted UTF-8 string
- */
-export const decryptMessage = async (encryptedBase64: string, privateKeyBase64: string, senderPublicKeyBase64: string) => {
-  await sodium.ready;
-  
-  // FIX: Removed the incorrect, redundant call to getPrivateKey.
-  // It now uses the privateKeyBase64 passed as an argument.
-  if (!privateKeyBase64) {
-    throw new Error("Your private key is not available for decryption. Please log in with your Recovery Key.");
+  if (myPrivateKey.length !== sodium.crypto_box_SECRETKEYBYTES) {
+    throw new Error("Private key must be 32 bytes.");
   }
 
-  const encryptedMessage = sodium.from_base64(encryptedBase64);
-  const nonce = encryptedMessage.slice(0, sodium.crypto_box_NONCEBYTES);
-  const ciphertext = encryptedMessage.slice(sodium.crypto_box_NONCEBYTES);
-  const privateKey = sodium.from_base64(privateKeyBase64);
-  const senderPublicKey = sodium.from_base64(senderPublicKeyBase64);
 
-  const decrypted = sodium.crypto_box_open_easy(ciphertext, nonce, senderPublicKey, privateKey);
 
-  if (!decrypted) {
-    throw new Error("Failed to decrypt message");
+  try {
+    const decryptedBytes = sodium.crypto_box_open_easy(
+      ciphertext,
+      nonce,
+      senderPublicKey,
+      myPrivateKey
+    );
+    return sodium.to_string(decryptedBytes);
+  } catch (err) {
+    console.error("❌ Decryption failed:", err);
+    throw new Error("Failed to decrypt message. Keys or data may be invalid.");
   }
-
-  return sodium.to_string(decrypted);
 };

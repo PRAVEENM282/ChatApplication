@@ -1,76 +1,54 @@
-import React, { useEffect, useState } from "react";
-import dayjs from "dayjs";
-import { decryptMessage } from "../../../services/crypto.service";
-import { getPrivateKey } from "../../../utils/KeyStorage";
-import { fetchUserPublicKey } from "../../../services/user.service";
+import React from "react";
+import { Message as MessageType } from "../../../types/chat.types";
+import { useAuth } from "../../../context/AuthProvider";
+import { MessageStatus } from "./MessageStatus";
 
 interface MessageProps {
-  encryptedText: string;
-  senderId: { username: string; _id: string };
-  currentUsername: string;
-  createdAt: string;
+  message: MessageType;
 }
 
-const Message: React.FC<MessageProps> = ({
-  encryptedText,
-  senderId,
-  currentUsername,
-  createdAt,
-}) => {
-  const isOwn = senderId.username === currentUsername;
-  const [decryptedText, setDecryptedText] = useState(isOwn ? encryptedText : "...");
-
-  useEffect(() => {
-    if (isOwn) {
-      return;
-    }
-    async function decryptReceivedMessage() {
-      try {
-        const viewerPrivateKey = await getPrivateKey(currentUsername);
-        if (!viewerPrivateKey) {
-          setDecryptedText("[Key Not Found]");
-          return;
-        }
-
-        const senderPublicKey = await fetchUserPublicKey(senderId._id);
-        if (!senderPublicKey) {
-          setDecryptedText("[Sender Key Not Found]");
-          return;
-        }
-
-        const decrypted = await decryptMessage(
-          encryptedText,
-          viewerPrivateKey,
-          senderPublicKey
-        );
-        
-        setDecryptedText(decrypted);
-
-      } catch (err) {
-        setDecryptedText("[Decryption Failed]");
-        console.error("Decryption error:", err);
-      }
-    }
-
-    decryptReceivedMessage();
-
-  }, [encryptedText, senderId._id, currentUsername, isOwn]);
+export const Message = ({ message }: MessageProps) => {
+  const { user } = useAuth();
+  const isMe = message.sender._id === user?._id;
 
   return (
-    <div
-      className={`message p-2 mb-2 rounded shadow-sm max-w-[75%] ${
-        isOwn
-          ? "ml-auto bg-blue-50 border-blue-200"
-          : "mr-auto bg-white border"
-      }`}
-    >
-      <div className="flex justify-between items-center text-xs text-gray-500 mb-1">
-        <strong>{senderId.username}</strong>
-        <span>{dayjs(createdAt).format("HH:mm")}</span>
+    <div className={`flex mb-3 ${isMe ? "justify-end" : "justify-start"}`}>
+      <div
+        className={`relative max-w-lg px-4 py-2 break-words
+        ${
+          isMe
+            ? "bg-blue-500 text-white rounded-xl rounded-br-none"
+            : "bg-gray-100 text-gray-800 rounded-xl rounded-bl-none"
+        }`}
+      >
+        {!isMe && (
+          <p className="text-xs font-semibold text-gray-600 mb-1">
+            {message.sender.username}
+          </p>
+        )}
+
+        <p className="text-sm">{message.text}</p>
+
+        <p
+          className={`text-xs mt-1 ${isMe ? "text-blue-100" : "text-gray-400"} text-right`}
+        >
+          {new Date(message.createdAt).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </p>
+        <MessageStatus status={message.status} isMe={isMe} />
+
+        {/* Tail arrow */}
+        <span
+          className={`absolute w-0 h-0 bottom-0
+            ${
+              isMe
+                ? "-right-2 border-l-8 border-l-blue-500 border-t-8 border-t-transparent border-b-8 border-b-transparent"
+                : "-left-2 border-r-8 border-r-gray-100 border-t-8 border-t-transparent border-b-8 border-b-transparent"
+            }`}
+        />
       </div>
-      <div className="text-gray-800">{decryptedText}</div>
     </div>
   );
 };
-
-export default Message;

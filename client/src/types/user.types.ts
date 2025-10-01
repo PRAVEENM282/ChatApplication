@@ -3,8 +3,8 @@ export interface User {
   username: string;
   email: string;
   publicKey: string;
-  avatarUrl?: string;
-  lastSeen?: string;
+  avatarUrl?: string; // This field is optional
+  lastSeen: string; // Dates are typically transmitted as ISO strings over JSON
   createdAt: string;
   updatedAt: string;
 }

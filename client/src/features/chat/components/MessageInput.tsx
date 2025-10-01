@@ -1,97 +1,125 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useRef, useState } from "react";
 import { useSocket } from "../../../context/SocketProvider";
+import { useAuth } from "../../../context/AuthProvider";
+import { ChatRoom, Message } from "../../../types/chat.types";
 import { encryptMessage } from "../../../services/crypto.service";
-import { fetchUserPublicKey } from "../../../services/user.service";
-import { getPrivateKey } from "../../../utils/KeyStorage";
 
 interface MessageInputProps {
-  chatRoomId: string;
-  recipientId: string;
-  senderUsername: string;
+  chatRoom: ChatRoom;
+  onNewMessage: (msg: Message) => void;
+  onOptimisticUpdate: (chatroomId: string, message: Message) => void;
 }
 
-const MessageInput: React.FC<MessageInputProps> = ({ chatRoomId, recipientId, senderUsername }) => {
-  const socket = useSocket();
+export const MessageInput: React.FC<MessageInputProps> = ({
+  chatRoom,
+  onNewMessage,
+  onOptimisticUpdate,
+}) => {
   const [text, setText] = useState("");
-  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Effect to handle typing indicators
-  useEffect(() => {
-    if (!socket) return;
-    
-    // Clear timeout on unmount
-    return () => {
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-      }
-    };
-  }, [socket]);
+  const [isSending, setIsSending] = useState(false);
+  const socket = useSocket();
+  const { user } = useAuth();
 
-  const handleTyping = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setText(e.target.value);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleTyping = () => {
     if (!socket) return;
 
-    // Emit 'typing' event
-    socket.emit('typing', { chatRoomId });
+    if (!typingTimeoutRef.current) {
+      socket.emit("start_typing", {
+        userId: user?._id,
+        chatroomId: chatRoom._id,
+      });
+    }
 
-    // Clear previous timeout
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
 
-    // Set a new timeout to emit 'stop_typing'
     typingTimeoutRef.current = setTimeout(() => {
-      socket.emit('stop_typing', { chatRoomId });
-    }, 2000); // 2 seconds delay
+      socket.emit("stop_typing", { chatroomId: chatRoom._id });
+      typingTimeoutRef.current = null; // Reset the ref
+    }, 2000); // 2 seconds
   };
 
-  const handleSend = async () => {
-    if (!text.trim() || !socket) return;
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!text.trim() || !user || isSending) return;
 
-    // Stop typing indicator on send
-    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    socket.emit('stop_typing', { chatRoomId });
+    setIsSending(true);
 
     try {
-      const recipientPublicKey = await fetchUserPublicKey(recipientId);
-      const senderPrivateKey = await getPrivateKey(senderUsername);
-      if (!senderPrivateKey) {
-        alert("Your keys are missing. Please log in again.");
-        return;
-      }
-      const encrypted = await encryptMessage(text, recipientPublicKey, senderPrivateKey);
-      socket.emit("send_message", {
-        chatRoomId,
-        encryptedText: encrypted,
-      });
-      setText("");
-    } catch (error) {
-      console.error("Failed to encrypt or send message", error);
-    }
-  };
+      const myPrivateKey = localStorage.getItem("privateKey");
+      if (!myPrivateKey) throw new Error("Private key not found!");
 
-  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
+      const recipient = chatRoom.participants.find((p) => p._id !== user._id);
+      if (!recipient) throw new Error("Recipient not found!");
+
+      const createdAt = new Date().toISOString();
+
+      const [encryptedPayloadRecipient, encryptedPayloadSender] =
+        await Promise.all([
+          encryptMessage(text, recipient.publicKey, myPrivateKey),
+          encryptMessage(text, user.publicKey, myPrivateKey),
+        ]);
+
+      const messagePayload = {
+        chatroomId: chatRoom._id,
+        encryptedTextForRecipient: JSON.stringify(encryptedPayloadRecipient),
+        encryptedTextForSender: JSON.stringify(encryptedPayloadSender),
+      };
+
+      const localMessage: Message = {
+        _id: `temp-${Date.now()}`,
+        chatroomId: chatRoom._id,
+        sender: user,
+        text: text,
+        createdAt: createdAt,
+        encryptedTextForRecipient: messagePayload.encryptedTextForRecipient,
+        encryptedTextForSender: messagePayload.encryptedTextForSender,
+        status: "sent",
+      };
+
+      // 1. Update the chat window immediately
+      onNewMessage(localMessage);
+
+      // 2. Tell the parent page to update the chat list preview
+      onOptimisticUpdate(chatRoom._id, localMessage);
+
+      // 3. Send the message to the server
+      socket?.emit("send_message", messagePayload);
+
+      setText("");
+    } catch (e) {
+      console.error("Failed to encrypt and send message:", e);
+      alert("Failed to send message. Please try again.");
+    } finally {
+      setIsSending(false);
     }
   };
 
   return (
-    <div className="message-input flex gap-2 p-4 bg-gray-50 border-t">
-      <input
-        type="text"
-        value={text}
-        onChange={handleTyping}
-        onKeyDown={onKeyDown}
-        placeholder="Type your message..."
-        className="flex-grow border rounded-full px-4 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-        aria-label="Message input"
-      />
-      <button onClick={handleSend} disabled={!text.trim()} className="bg-blue-600 disabled:bg-blue-300 text-white font-bold px-4 py-2 rounded-full hover:bg-blue-700 transition-colors">
-        Send
-      </button>
+    <div className="p-4 bg-gray-100 border-t border-gray-300">
+      <form onSubmit={handleSubmit} className="flex">
+        <input
+          type="text"
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            handleTyping();
+          }}
+          disabled={isSending}
+          className="flex-1 p-2 border border-gray-300 rounded-l-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-200"
+          placeholder={isSending ? "Sending..." : "Type a message..."}
+        />
+        <button
+          type="submit"
+          disabled={isSending || !text.trim()}
+          className="bg-blue-500 text-white px-4 py-2 rounded-r-md hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
+        >
+          {isSending ? "..." : "Send"}
+        </button>
+      </form>
     </div>
   );
 };
-
-export default MessageInput;

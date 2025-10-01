@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { useAuth } from "../../../context/AuthProvider";
 import { registerUser } from "../../../services/auth.service";
-import { initializeSodium } from "../../../services/crypto.service";
 
 export const RegistrationForm = () => {
   const [username, setUsername] = useState("");
@@ -14,28 +13,23 @@ export const RegistrationForm = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
-      return;
-    }
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters long.");
-      return;
-    }
     setError(null);
     setIsLoading(true);
 
-    try {
-      await initializeSodium();
-      const data = await registerUser({ username, email, password });
+    if (confirmPassword !== password) {
+      setError("password should be the same");
+      setIsLoading(false);
+      return;
+    }
 
+    try {
+      const data = await registerUser({ username, email, password });
+      // If registration is successful, log the user in with the new token
       if (data.accessToken) {
         login(data.accessToken);
-        localStorage.setItem("username", data.username);
-        localStorage.setItem("userId", data.userId);
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || "An unexpected error occurred during registration.");
+      setError(err.response?.data?.message || "An unexpected error occurred.");
     } finally {
       setIsLoading(false);
     }
@@ -52,7 +46,7 @@ export const RegistrationForm = () => {
         </h2>
 
         {error && (
-          <p className="bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded-lg text-center text-sm capitalize">
+          <p className="bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded-lg text-center">
             {error}
           </p>
         )}
@@ -138,6 +132,7 @@ export const RegistrationForm = () => {
           )}
         </div>
 
+        {/* Submit */}
         <button
           type="submit"
           disabled={isLoading}

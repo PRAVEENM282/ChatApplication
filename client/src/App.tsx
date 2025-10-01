@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -6,61 +6,53 @@ import {
   Navigate,
 } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthProvider";
-import { AuthPage } from "./features/auth/pages/AuthPage";
 import { SocketProvider } from "./context/SocketProvider";
-import ChatsPage from "./features/chat/pages/ChatPage";
-import api, { setCsrfToken } from "./lib/axios";
+import { AuthPage } from "./features/auth/pages/AuthPage";
+import { ChatPage } from "./features/chat/pages/ChatPage";
+import CryptoRoundtripTest from "./tests/CryptoRoundtripTest";
+import { PresenceProvider } from "./context/PresenceProvider";
 
+// ✅ Protected route wrapper
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated } = useAuth();
   return isAuthenticated ? <>{children}</> : <Navigate to="/auth" replace />;
 };
 
+// ✅ Redirect if already logged in
 const AuthRedirector = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated } = useAuth();
-  return isAuthenticated ? <Navigate to="/chat" replace /> : <>{children}</>;
+  return isAuthenticated ? <Navigate to="/" replace /> : <>{children}</>;
 };
 
 function App() {
-  // Fetch CSRF token on initial application load
-  useEffect(() => {
-    const fetchCsrfToken = async () => {
-      try {
-        const { data } = await api.get('/api/csrf-token');
-        setCsrfToken(data.csrfToken);
-        console.log("CSRF Token Set");
-      } catch (error) {
-        console.error("Failed to fetch CSRF token:", error);
-      }
-    };
-    fetchCsrfToken();
-  }, []);
-
   return (
     <AuthProvider>
-      <SocketProvider>
-        <Router>
-          <Routes>
-            <Route
-              path="/chat"
-              element={
-                <ProtectedRoute>
-                  <ChatsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/auth"
-              element={
-                <AuthRedirector>
-                  <AuthPage />
-                </AuthRedirector>
-              }
-            />
-            <Route path="*" element={<Navigate to="/chat" />} />
-          </Routes>
-        </Router>
-      </SocketProvider>
+      <Router>
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <SocketProvider>
+                  <PresenceProvider>
+                    <ChatPage />
+                  </PresenceProvider>
+                </SocketProvider>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/auth"
+            element={
+              <AuthRedirector>
+                <AuthPage />
+              </AuthRedirector>
+            }
+          />
+          {/* 🔹 Debug Route for crypto testing */}
+          <Route path="/crypto-test" element={<CryptoRoundtripTest />} />
+        </Routes>
+      </Router>
     </AuthProvider>
   );
 }
