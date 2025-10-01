@@ -13,8 +13,7 @@ interface MessageInputProps {
 const MessageInput: React.FC<MessageInputProps> = ({ chatRoomId, recipientId, senderUsername }) => {
   const socket = useSocket();
   const [text, setText] = useState("");
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Effect to handle typing indicators
   useEffect(() => {
     if (!socket) return;

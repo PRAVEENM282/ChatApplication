@@ -1,19 +1,22 @@
 import mongoose from "mongoose";
-import { Schema } from "mongoose";
 
 const messageSchema = new mongoose.Schema(
   {
-    chatRoomId: {
+    chatroomId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Chatroom",
+      ref: "ChatRoom",
       required: true,
     },
-    senderId: {
+    sender: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
-    encryptedText: {
+    encryptedTextForRecipient: {
+      type: String,
+      required: true,
+    },
+    encryptedTextForSender: {
       type: String,
       required: true,
     },

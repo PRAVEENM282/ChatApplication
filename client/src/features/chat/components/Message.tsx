@@ -18,17 +18,12 @@ const Message: React.FC<MessageProps> = ({
   createdAt,
 }) => {
   const isOwn = senderId.username === currentUsername;
-  
-  // If the message is our own, the 'encryptedText' is actually the plaintext.
-  // If it's a received message, we'll start with a placeholder.
   const [decryptedText, setDecryptedText] = useState(isOwn ? encryptedText : "...");
 
   useEffect(() => {
-    // We only need to decrypt messages received from others.
     if (isOwn) {
       return;
     }
-
     async function decryptReceivedMessage() {
       try {
         const viewerPrivateKey = await getPrivateKey(currentUsername);

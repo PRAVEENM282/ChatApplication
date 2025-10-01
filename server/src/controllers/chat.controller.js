@@ -1,129 +1,140 @@
-import Chatroom from '../models/Chatroom.js';
-import User from '../models/User.js';
-import mongoose from 'mongoose';
-import { catchAsync, AppError } from "../middlewares/errorHandler.js";
+import ChatRoom from "../models/Chatroom.js";
+import User from "../models/User.js";
+import mongoose from "mongoose";
+import Message from "../models/Message.js";
 
-export const createChatRoom = catchAsync(async (req, res, next) => {
+export const createChatRoom = async (req, res) => {
   const { recipientId } = req.body;
   const userId = req.userId;
 
+  if (!recipientId) {
+    return res.status(400).json({ message: "Recipient ID is required" });
+  }
+
+  // Prevent creating chat room with self
   if (userId === recipientId) {
-    return next(new AppError("Cannot create chat room with yourself", 400));
+    return res
+      .status(400)
+      .json({ message: "Cannot create chat room with yourself" });
   }
 
-  const recipient = await User.findById(recipientId);
-  if (!recipient) {
-    return next(new AppError("Recipient not found", 404));
-  }
+  try {
+    const recipient = await User.findById(recipientId);
+    if (!recipient) {
+      return res.status(404).json({ message: "Recipient not found" });
+    }
 
-  const participants = [userId, recipientId]
-    .sort()
-    .map(id => new mongoose.Types.ObjectId(id));
-  
-  const participantPair = participants.map(p => p.toString()).join('-');
+    // Sort participants by string representation to ensure consistent ordering
+    const participants = [userId, recipientId]
+      .sort((a, b) => a.toString().localeCompare(b.toString()))
+      .map((id) => new mongoose.Types.ObjectId(id));
 
-  let chatRoom = await Chatroom.findOne({ participantPair: participantPair })
-    .populate('participants', '-password -refreshToken');
+    // Create the participant pair string for querying
+    const participantPair = participants.map((p) => p.toString()).join("-");
 
-  if (!chatRoom) {
-    // A race condition check
-    try {
-      chatRoom = new Chatroom({
-        participants: participants,
-        type: 'one_to_one',
-      });
-      await chatRoom.save();
-      chatRoom = await chatRoom.populate('participants', '-password -refreshToken');
-    } catch (saveError) {
-      if (saveError.code === 11000) { // Duplicate key error
-        chatRoom = await Chatroom.findOne({ participantPair: participantPair })
-          .populate('participants', '-password -refreshToken');
-      } else {
+    // First try to find existing chat room using the participantPair
+    let chatRoom = await ChatRoom.findOne({
+      participantPair: participantPair,
+    }).populate("participants", "-password -refreshToken");
+
+    if (!chatRoom) {
+      try {
+        chatRoom = new ChatRoom({
+          participants: participants,
+          type: "one_to_one",
+          // participantPair will be set automatically by pre-save middleware
+        });
+        await chatRoom.save();
+        chatRoom = await chatRoom.populate(
+          "participants",
+          "-password -refreshToken"
+        );
+      } catch (saveError) {
+        // Handle duplicate key error (race condition)
+        if (saveError.code === 11000) {
+          // If duplicate, try to find the existing one again
+          chatRoom = await ChatRoom.findOne({
+            participantPair: participantPair,
+          }).populate("participants", "-password -refreshToken");
+
+          if (chatRoom) {
+            return res.status(200).json(chatRoom);
+          }
+        }
+        console.error("Error saving chat room:", saveError);
         throw saveError;
       }
     }
+
+    res.status(200).json(chatRoom);
+  } catch (err) {
+    console.error("Error creating chat room:", err);
+    res.status(500).json({ message: "Internal server error" });
   }
+};
 
-  res.status(200).json(chatRoom);
-});
+/**
+ * Fetches all chat rooms for the currently authenticated user.
+ */
+export const getChatRooms = async (req, res) => {
+  try {
+    const currentUserId = req.userId;
 
-export const getChatRooms = catchAsync(async (req, res, next) => {
+    const chatRooms = await ChatRoom.find({ participants: currentUserId })
+      .populate("participants", "username publicKey avatarUrl")
+      // This is the crucial change: a nested populate
+      .populate({
+        path: "lastMessage",
+        populate: {
+          path: "sender",
+          select: "username publicKey", // Ensure we get the public key
+        },
+      })
+      .sort({ updatedAt: -1 }) // Sort by most recent activity
+      .exec();
+
+    res.status(200).json(chatRooms);
+  } catch (err) {
+    console.error("Error fetching chat rooms:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+/**
+ * Fetches all messages for a specific chat room
+ */
+export const getChatMessages = async (req, res) => {
+  const { chatroomId } = req.params;
   const currentUserId = req.userId;
-  const chatRooms = await Chatroom.find({ participants: currentUserId })
-    .sort({ updatedAt: -1 })
-    .populate('participants', '-password -refreshToken')
-    .populate({
-      path: 'lastMessage',
-      populate: {
-        path: 'senderId',
-        select: 'username'
-      }
-    })
-    .exec();
-    
-  res.status(200).json(chatRooms);
-});
 
-export const createGroupChat = catchAsync(async (req, res, next) => {
-  const { groupname, groupicon, members } = req.body;
-  
-  const participantIds = [...new Set([req.userId, ...members])].map(id => new mongoose.Types.ObjectId(id));
-  
-  if (participantIds.length < 2) {
-    return next(new AppError("Group must have at least 2 members", 400));
+  try {
+    // First, verify that the user is a participant in this chat room
+    const chatRoom = await ChatRoom.findById(chatroomId);
+
+    if (!chatRoom) {
+      return res.status(404).json({ message: "Chat room not found" });
+    }
+
+    // Check if current user is a participant
+    const isParticipant = chatRoom.participants.some(
+      (participantId) => participantId.toString() === currentUserId.toString()
+    );
+
+    if (!isParticipant) {
+      return res.status(403).json({
+        message: "Access denied. You are not a participant in this chat room.",
+      });
+    }
+
+    // Fetch all messages for this chat room, sorted by creation time
+    const messages = await Message.find({ chatroomId })
+      .sort({ createdAt: 1 }) // Oldest first
+      .populate("sender", "username publicKey") // Populate sender info
+      .exec();
+
+    res.status(200).json(messages);
+  } catch (err) {
+    console.error("Error fetching chat messages:", err);
+    res.status(500).json({ message: "Internal server error" });
   }
-
-  const chatRoom = new Chatroom({
-    participants: participantIds,
-    type: "group",
-    groupname,
-    groupicon
-  });
-  await chatRoom.save();
-  
-  res.status(201).json(chatRoom);
-});
-
-export const addGroupMember = catchAsync(async (req, res, next) => {
-  const { chatRoomId } = req.params;
-  const { userId } = req.body;
-  
-  const chatRoom = await Chatroom.findById(chatRoomId);
-  if (!chatRoom) return next(new AppError("Group not found", 404));
-  if (chatRoom.type !== "group") return next(new AppError("Not a group chat", 400));
-  
-  if (!chatRoom.participants.includes(userId)) {
-    chatRoom.participants.push(userId);
-    await chatRoom.save();
-  }
-  
-  res.status(200).json(chatRoom);
-});
-
-export const removeGroupMember = catchAsync(async (req, res, next) => {
-  const { chatRoomId } = req.params;
-  const { userId } = req.body;
-  
-  const chatRoom = await Chatroom.findById(chatRoomId);
-  if (!chatRoom) return next(new AppError("Group not found", 404));
-  
-  chatRoom.participants = chatRoom.participants.filter(
-    id => id.toString() !== userId
-  );
-  await chatRoom.save();
-  
-  res.status(200).json(chatRoom);
-});
-
-export const muteChat = catchAsync(async (req, res, next) => {
-  const { chatRoomId } = req.params;
-  const userId = req.userId;
-  
-  const room = await Chatroom.findById(chatRoomId);
-  if (!room) return next(new AppError("Chat not found", 404));
-  
-  room.mutedBy.addToSet(userId);
-  await room.save();
-  
-  res.status(200).json(room);
-});
+};

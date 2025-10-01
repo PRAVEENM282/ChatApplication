@@ -1,4 +1,5 @@
 import {create} from 'zustand';
+import api from '../lib/axios';
 
 interface AuthState {
   accessToken: string | null;
@@ -14,9 +15,16 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ accessToken: token, isAuthenticated: true });
     localStorage.setItem("accessToken", token);
   },
-  logout: () => {
-    set({ accessToken: null, isAuthenticated: false });
-    localStorage.removeItem("accessToken");
-    // We will later call the backend's /logout endpoint here
+  logout: async () => {
+    try {
+      await api.post('/api/auth/logout');
+    } catch (error) {
+      console.error("Logout failed:", error);
+    } finally {
+      set({ accessToken: null, isAuthenticated: false });
+      localStorage.removeItem("accessToken");
+      localStorage.removeItem("username");
+      localStorage.removeItem("userId");
+    }
   },
 }));

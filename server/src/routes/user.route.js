@@ -1,12 +1,14 @@
 import express from "express";
-import { searchUsers,getUser,updateUser } from "../controllers/user.controller.js";
-import { verifyJWT } from "../middlewares/verifyJWT.js";
-import { validateSearch } from "../validators/userValidators.js";
+import { getMyProfile, searchUsers } from "../controllers/user.controller.js";
+import { verifyJWT } from "../middlewares/verifyJWT.js"; // 👈 Import your middleware
+
 const router = express.Router();
 
+// Apply the verifyJWT middleware to this route.
+// This ensures that only logged-in users can search for other users.
+router.get("/search", verifyJWT, searchUsers);
 
-router.get("/search", verifyJWT, validateSearch, searchUsers);
-router.get("/:id", verifyJWT, getUser);
-router.put("/:id", verifyJWT, updateUser);
+//Get the current user's profile
+router.get("/me", verifyJWT, getMyProfile);
 
 export default router;

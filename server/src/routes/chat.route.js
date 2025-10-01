@@ -1,25 +1,20 @@
 import express from "express";
-import { 
-  createChatRoom, 
-  getChatRooms, 
-  createGroupChat, 
-  addGroupMember, 
-  removeGroupMember,
-  muteChat 
+import {
+  createChatRoom,
+  getChatRooms,
+  getChatMessages, // Add this new import
 } from "../controllers/chat.controller.js";
 import { verifyJWT } from "../middlewares/verifyJWT.js";
-import { getMessages, markAsRead } from "../controllers/message.controller.js";
-import { validateCreateChat, validateCreateGroupChat } from "../validators/chatValidators.js";
 
 const router = express.Router();
 
-router.post("/", verifyJWT, validateCreateChat, createChatRoom);
+// Route to create a new chat room (already exists)
+router.post("/", verifyJWT, createChatRoom);
+
+// Route to get all of the user's chat rooms (already exists)
 router.get("/", verifyJWT, getChatRooms);
-router.post("/group", verifyJWT, validateCreateGroupChat, createGroupChat);
-router.post("/group/:chatRoomId/add", verifyJWT, addGroupMember);
-router.post("/group/:chatRoomId/remove", verifyJWT, removeGroupMember);
-router.get("/:chatRoomId/messages", verifyJWT, getMessages);
-router.put("/messages/:messageId/read", verifyJWT, markAsRead);
-router.put("/:chatRoomId/mute", verifyJWT, muteChat);
+
+// NEW: Route to get all messages for a specific chat room
+router.get("/:chatroomId/messages", verifyJWT, getChatMessages);
 
 export default router;

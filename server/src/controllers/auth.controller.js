@@ -1,118 +1,221 @@
 import User from "../models/User.js";
 import bcrypt from "bcrypt";
-import jwt from "jsonwebtoken";
+// No longer need 'generateKeyPairSync' as the client handles key generation
+import dotenv from "dotenv";
+import jwt, { decode } from "jsonwebtoken";
 import mongoose from "mongoose";
-import { catchAsync, AppError } from "../middlewares/errorHandler.js";
+import cookieParser from "cookie-parser";
 
-// --- More Robust Cookie Options ---
-const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+dotenv.config();
 
-const cookieOptions = {
-  httpOnly: true,
-  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-  secure: IS_PRODUCTION, // Only use secure cookies in production (HTTPS)
-  sameSite: IS_PRODUCTION ? 'None' : 'Lax', // 'None' for cross-site prod, 'Lax' for dev
-};
-
-export const register = catchAsync(async (req, res, next) => {
+/**
+ * Handles new user registration securely.
+ * Assumes the client generates the key pair and sends the public key.
+ */
+export const register = async (req, res) => {
+  // The client MUST send its public key in the request body.
   const { username, email, password, publicKey } = req.body;
 
-  const duplicate = await User.findOne({ $or: [{ email }, { username }] }).lean().exec();
-  if (duplicate) {
-    return next(new AppError("Username or email is already taken", 409));
+  if (!username || !email || !password || !publicKey) {
+    return res.status(400).json({
+      message: "Username, email, password, and public key are required",
+    });
   }
 
-  const hashPwd = await bcrypt.hash(password, 10);
-  const newUserId = new mongoose.Types.ObjectId();
-  
-  const accessToken = jwt.sign({ userId: newUserId }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
-  const refreshToken = jwt.sign({ userId: newUserId }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: "7d" });
+  try {
+    // Check if the username or email is already taken
+    const duplicate = await User.findOne({
+      $or: [{ email: email }, { username: username }],
+    })
+      .lean()
+      .exec(); // .lean() makes the query faster as we only need to check for existence
 
-  await User.create({
-    _id: newUserId,
-    username,
-    email,
-    password: hashPwd,
-    publicKey,
-    refreshToken,
-  });
+    if (duplicate) {
+      return res
+        .status(409)
+        .json({ message: "Username or email is already taken" });
+    }
 
-  res.cookie("jwt", refreshToken, cookieOptions);
-  
-  res.status(201).json({ message: `New user ${username} created`, accessToken, userId: newUserId, username });
-});
+    // Hash the user's password for secure storage
+    const hashPwd = await bcrypt.hash(password, 10);
 
-export const login = catchAsync(async (req, res, next) => {
+    // Create a new user ID ahead of time to use in JWTs
+    const newUserId = new mongoose.Types.ObjectId();
+
+    // Create tokens before creating the user to save everything in one step
+    const accessToken = jwt.sign(
+      { userId: newUserId },
+      process.env.ACCESS_TOKEN_SECRET,
+      { expiresIn: "15m" }
+    );
+
+    const refreshToken = jwt.sign(
+      { userId: newUserId },
+      process.env.REFRESH_TOKEN_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    // ✅ Create the new user in a single, atomic database operation
+    await User.create({
+      _id: newUserId,
+      username,
+      email,
+      password: hashPwd,
+      publicKey, // Store the public key received from the client
+      refreshToken, // Store the refresh token immediately
+    });
+
+    // Set the refresh token in an HTTP-only cookie for security
+    res.cookie("jwt", refreshToken, {
+      httpOnly: true,
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+
+    // ✅ The response correctly sends the access token.
+    res.status(201).json({
+      message: `New user ${username} created`,
+      accessToken: accessToken,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+/**
+ * Handles user login and issues new tokens securely.
+ */
+export const login = async (req, res) => {
   const { email, password } = req.body;
-
-  const foundUser = await User.findOne({ email }).select('+password').exec();
-  
-  if (!foundUser || !(await bcrypt.compare(password, foundUser.password))) {
-    return next(new AppError("Invalid credentials", 401));
+  if (!email || !password) {
+    return res.status(400).json({ message: "Email and password are required" });
   }
 
-  const accessToken = jwt.sign({ userId: foundUser._id }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
-  const refreshToken = jwt.sign({ userId: foundUser._id }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: "7d" });
+  try {
+    const foundUser = await User.findOne({ email: email }).select("+password");
+    console.log(foundUser);
+    console.log(password);
+    console.log(email);
 
-  foundUser.refreshToken = refreshToken;
-  await foundUser.save();
+    if (!foundUser || !foundUser.password) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
 
-  res.cookie("jwt", refreshToken, cookieOptions);
+    const match = await bcrypt.compare(password, foundUser.password);
 
-  res.status(200).json({ 
-    message: `${foundUser.username} welcome back`, 
-    accessToken, 
-    username: foundUser.username,
-    userId: foundUser._id,
+    if (!match) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    // User is legitimate, create new tokens
+    const accessToken = jwt.sign(
+      { userId: foundUser._id },
+      process.env.ACCESS_TOKEN_SECRET,
+      { expiresIn: "15m" }
+    );
+    const refreshToken = jwt.sign(
+      { userId: foundUser._id },
+      process.env.REFRESH_TOKEN_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    // Update the user's refresh token in the database
+    foundUser.refreshToken = refreshToken;
+    await foundUser.save();
+
+    // Set the new refresh token in the cookie
+    res.cookie("jwt", refreshToken, {
+      httpOnly: true,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    // Send the access token to the client
+    res.status(200).json({
+      message: `${foundUser.username} welcome back`,
+      accessToken: accessToken,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const logout = async (req, res) => {
+  const cookies = req.cookies;
+
+  if (!cookies?.jwt) {
+    return res.sendStatus(204);
+  }
+  const refreshToken = cookies.jwt;
+
+  res.clearCookie("jwt", {
+    httpOnly: true,
+    secure: true,
+    sameSite: "None",
   });
-});
 
-export const logout = catchAsync(async (req, res) => {
-  const { jwt: refreshToken } = req.cookies;
-  if (!refreshToken) return res.sendStatus(204);
-  
-  res.clearCookie("jwt", cookieOptions);
+  try {
+    const foundUser = await User.findOne({ refreshToken: refreshToken });
+    if (!foundUser) {
+      return res.sendStatus(204);
+    }
 
-  // Invalidate the token in the database
-  const foundUser = await User.findOne({ refreshToken });
-  if (foundUser) {
     foundUser.refreshToken = "";
     await foundUser.save();
+
+    return res.sendStatus(204);
+  } catch (err) {
+    console.log(err);
+    return res.status(500).json({ message: "Internal server error" });
   }
-  
-  res.sendStatus(204);
-});
+};
 
-export const refresh = catchAsync(async (req, res, next) => {
-  const { jwt: refreshToken } = req.cookies;
-  if (!refreshToken) {
-    return next(new AppError("Unauthorized", 401));
+export const refresh = async (req, res) => {
+  const cookies = req.cookies;
+  console.log(cookies);
+  if (!cookies?.jwt) {
+    return res.sendStatus(401);
   }
-
-  const foundUser = await User.findOne({ refreshToken }).exec();
-
-  if (!foundUser) {
-    // If the token is invalid, instruct the client to clear it.
-    res.clearCookie("jwt", cookieOptions);
-    return next(new AppError("Forbidden: Invalid Token", 403));
-  }
-
-  jwt.verify(
-    refreshToken,
-    process.env.REFRESH_TOKEN_SECRET,
-    async (err, decoded) => {
-      if (err || foundUser._id.toString() !== decoded.userId) {
-        return next(new AppError("Forbidden: Token Mismatch", 403));
-      }
-
-      const accessToken = jwt.sign(
-        { userId: foundUser._id },
-        process.env.ACCESS_TOKEN_SECRET,
-        { expiresIn: "15m" }
-      );
-      
-      res.json({ accessToken });
+  const refreshToken = cookies.jwt;
+  try {
+    const foundUser = await User.findOne({ refreshToken: refreshToken }).exec();
+    console.log(foundUser);
+    if (!foundUser) {
+      return res.status(404).json({ message: "unauthorized access" });
     }
-  );
-});
+    jwt.verify(
+      refreshToken,
+      process.env.REFRESH_TOKEN_SECRET,
+      async (err, decoded) => {
+        if (err || foundUser._id.toString() !== decoded.userId) {
+          return res.sendStatus(403);
+        }
 
+        const accessToken = jwt.sign(
+          { userId: foundUser._id },
+          process.env.ACCESS_TOKEN_SECRET,
+          { expiresIn: "15m" }
+        );
+        const newRefreshToken = jwt.sign(
+          { userId: foundUser._id },
+          process.env.REFRESH_TOKEN_SECRET,
+          { expiresIn: "7d" }
+        );
+
+        foundUser.refreshToken = newRefreshToken;
+        await foundUser.save();
+
+        res.cookie("jwt", newRefreshToken, {
+          httpOnly: true,
+          maxAge: 7 * 24 * 60 * 60 * 1000,
+        });
+
+        res.json({ accessToken });
+        console.log(accessToken + "  " + refreshToken);
+      }
+    );
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ message: "internal server error" });
+  }
+};
