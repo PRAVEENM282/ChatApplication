@@ -1,8 +1,30 @@
 import Message from "../models/Message.js";
 import ChatRoom from "../models/Chatroom.js";
 
+const updateChatRoom = async (message) => {
+  const chatRoom = await ChatRoom.findById(message.chatroomId);
+  if (chatRoom) {
+    chatRoom.lastMessage = message._id;
+    const sender = message.sender.toString();
+
+    chatRoom.participants.forEach((participantId) => {
+      const id = participantId.toString();
+      if (id !== sender) {
+        const currentCount = chatRoom.unreadCount.get(id) || 0;
+        chatRoom.unreadCount.set(id, currentCount + 1);
+      }
+    });
+    await chatRoom.save();
+  }
+};
+
+const populateMessage = (messageId) => {
+  return Message.findById(messageId)
+    .populate("sender", "username publicKey avatarUrl")
+    .exec();
+};
+
 export const saveMessage = async (messageData) => {
-  // messageData MUST contain: chatroomId, sender, encryptedText (string)
   const {
     chatroomId,
     sender,
@@ -11,27 +33,42 @@ export const saveMessage = async (messageData) => {
   } = messageData;
 
   try {
-    // 1) Create message
     const newMessage = await Message.create({
       chatroomId,
       sender,
-      encryptedTextForSender, // must be a string; client will JSON.stringify the payload
+      encryptedTextForSender,
       encryptedTextForRecipient,
+      type: "text",
     });
 
-    // 2) Update chat’s lastMessage
-    await ChatRoom.findByIdAndUpdate(chatroomId, {
-      lastMessage: newMessage._id,
-    });
-
-    // 3) Return a populated message (sender fields)
-    const populatedMessage = await Message.findById(newMessage._id)
-      .populate("sender", "username publicKey avatarUrl")
-      .exec();
-
-    return populatedMessage;
+    await updateChatRoom(newMessage);
+    return await populateMessage(newMessage._id);
   } catch (err) {
     console.error("Error saving message:", err);
+    throw err;
+  }
+};
+
+export const saveFileMessage = async (messageData) => {
+  const {
+    chatroomId,
+    sender,
+    type,
+    fileMetadata,
+  } = messageData;
+
+  try {
+    const newMessage = await Message.create({
+      chatroomId,
+      sender,
+      type,
+      fileMetadata: fileMetadata,
+    });
+
+    await updateChatRoom(newMessage);
+    return await populateMessage(newMessage._id);
+  } catch (err) {
+    console.error("Error saving file message:", err);
     throw err;
   }
 };

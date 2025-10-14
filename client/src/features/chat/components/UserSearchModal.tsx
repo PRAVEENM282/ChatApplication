@@ -5,7 +5,7 @@ import { createChatRoom } from "../../../services/chat.service";
 
 interface UserSearchModalProps {
   onClose: () => void;
-  onChatCreated: () => void; // A function to tell the ChatPage to refresh its list
+  onChatCreated: () => void; 
 }
 
 export const UserSearchModal = ({
@@ -17,7 +17,6 @@ export const UserSearchModal = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // This effect runs a "debounced" search whenever the user stops typing
   useEffect(() => {
     if (searchTerm.trim() === "") {
       setResults([]);
@@ -28,8 +27,7 @@ export const UserSearchModal = ({
     const handler = setTimeout(async () => {
       try {
         const response = await searchUsers(searchTerm);
-        
-        setResults(response.items || []); // Only use the items array!
+        setResults(response.items || []);
         setError(null);
       } catch (err) {
         setError("Failed to search for users.");
@@ -38,7 +36,6 @@ export const UserSearchModal = ({
         setLoading(false);
       }
     }, 500);
-    // Debounce time: 500ms
 
     return () => {
       clearTimeout(handler);
@@ -48,8 +45,8 @@ export const UserSearchModal = ({
   const handleStartChat = async (recipientId: string) => {
     try {
       await createChatRoom(recipientId);
-      onChatCreated(); // Tell the parent component that a chat was created
-      onClose(); // Close the modal
+      onChatCreated();
+      onClose();
     } catch (err) {
       setError("Failed to start chat. Maybe one already exists?");
     }

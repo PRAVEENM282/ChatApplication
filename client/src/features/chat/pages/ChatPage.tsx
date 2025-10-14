@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { ChatRoom, Message } from "../../../types";
-import { getMyChatRooms } from "../../../services/chat.service";
+import { getMyChatRooms, markChatAsRead } from "../../../services/chat.service";
 import { ChatList } from "../components/ChatList";
 import { ChatWindow } from "../components/ChatWindow";
 import { UserSearchModal } from "../components/UserSearchModal";
@@ -8,7 +8,6 @@ import { useSocket } from "../../../context/SocketProvider";
 import { decryptMessage } from "../../../services/crypto.service";
 import { useAuth } from "../../../context/AuthProvider";
 
-// Helper function to process a room for display
 const processRoomForPreview = async (
   room: ChatRoom,
   userId: string,
@@ -20,29 +19,45 @@ const processRoomForPreview = async (
     newRoom.lastMessageTimestamp = newRoom.createdAt;
     return newRoom;
   }
+
+  const {
+    sender,
+    encryptedTextForSender,
+    encryptedTextForRecipient,
+    createdAt,
+    type,
+    fileMetadata,
+  } = newRoom.lastMessage;
+
+  const isMyMessage = sender._id === userId;
+  const prefix = isMyMessage ? "You: " : "";
+
   try {
-    const {
-      sender,
-      encryptedTextForSender,
-      encryptedTextForRecipient,
-      createdAt,
-    } = newRoom.lastMessage;
-    const isMyMessage = sender._id === userId;
+    if (type !== "text" && fileMetadata) {
+      newRoom.lastMessagePreview = `${prefix}[${type === "image" ? "Image" : "File"}: ${fileMetadata.filename}]`;
+      newRoom.lastMessageTimestamp = createdAt;
+      return newRoom;
+    }
+
     const encryptedStr = isMyMessage
       ? encryptedTextForSender
       : encryptedTextForRecipient;
+
+    if (!encryptedStr) throw new Error("Missing encrypted text for preview");
+
     const { ciphertextBase64, nonceBase64 } = JSON.parse(encryptedStr);
+
     const decryptedText = await decryptMessage(
-      ciphertextBase64,
-      nonceBase64,
-      sender.publicKey,
-      privateKey
+      ciphertextBase64.trim(),
+      nonceBase64.trim(),
+      sender.publicKey.trim(),
+      privateKey.trim()
     );
-    const prefix = isMyMessage ? "You: " : "";
+
     newRoom.lastMessagePreview = `${prefix}${decryptedText}`;
     newRoom.lastMessageTimestamp = createdAt;
   } catch (e) {
-    newRoom.lastMessagePreview = "[Encrypted Message]";
+    newRoom.lastMessagePreview = `[${isMyMessage ? "Your" : "Encrypted"} ${type || "Message"}]`;
     newRoom.lastMessageTimestamp = newRoom.lastMessage.createdAt;
   }
   return newRoom;
@@ -85,7 +100,6 @@ export const ChatPage: React.FC = () => {
     loadRooms();
   }, [loadRooms]);
 
-  // ✅ This is the corrected real-time update logic
   useEffect(() => {
     if (!socket || !user) return;
 
@@ -97,76 +111,116 @@ export const ChatPage: React.FC = () => {
       const privateKey = localStorage.getItem("privateKey");
       if (!privateKey) return;
 
+      const isActiveRoom =
+        selectedChat && selectedChat._id === message.chatroomId;
+
       setChatRooms((prevRooms) => {
         const roomIndex = prevRooms.findIndex(
           (r) => r._id === message.chatroomId
         );
-        if (roomIndex === -1) return prevRooms; // Should not happen
-
+        if (roomIndex === -1) return prevRooms;
         const roomToUpdate = { ...prevRooms[roomIndex] };
 
-        // Decrypt the preview text for the notification
-        const { encryptedTextForRecipient, sender } = message;
-        const { ciphertextBase64, nonceBase64 } = JSON.parse(
-          encryptedTextForRecipient
-        );
+        const currentCount = roomToUpdate.unreadCount?.[user._id] || 0;
+        const unreadCountUpdate = {
+          ...roomToUpdate.unreadCount,
+          [user._id]: isActiveRoom ? 0 : currentCount + 1,
+        };
 
-        decryptMessage(
-          ciphertextBase64,
-          nonceBase64,
-          sender.publicKey,
-          privateKey
-        )
-          .then((decryptedText) => {
-            roomToUpdate.lastMessagePreview = decryptedText;
+        if (message.type !== "text") {
+          const fileType = message.type === "image" ? "Image" : "File";
+          const filename = message.fileMetadata?.filename || "Encrypted File";
 
-            // This update needs to be inside the .then()
-            setChatRooms((currentRooms) => {
-              const updatedRoom = {
-                ...roomToUpdate,
-                lastMessage: message,
-                lastMessageTimestamp: message.createdAt,
-                unreadCount: {
-                  ...roomToUpdate.unreadCount,
-                  [user._id]: (roomToUpdate.unreadCount?.[user._id] || 0) + 1,
-                },
-              };
-              const otherRooms = currentRooms.filter(
-                (r) => r._id !== message.chatroomId
-              );
-              const newSortedRooms = [updatedRoom, ...otherRooms];
-              newSortedRooms.sort(
-                (a, b) =>
-                  new Date(b.lastMessageTimestamp || 0).getTime() -
-                  new Date(a.lastMessageTimestamp || 0).getTime()
-              );
-              return newSortedRooms;
-            });
-          })
-          .catch((e) =>
-            console.error("Failed to decrypt notification snippet", e)
+          const updatedRoom = {
+            ...roomToUpdate,
+            lastMessage: message,
+            lastMessagePreview: `${message.sender.username}: [${fileType}: ${filename}]`,
+            lastMessageTimestamp: message.createdAt,
+            unreadCount: unreadCountUpdate,
+          };
+          const otherRooms = prevRooms.filter(
+            (r) => r._id !== message.chatroomId
+          );
+          const newSortedRooms = [updatedRoom, ...otherRooms];
+          newSortedRooms.sort(
+            (a, b) =>
+              new Date(b.lastMessageTimestamp || 0).getTime() -
+              new Date(a.lastMessageTimestamp || 0).getTime()
+          );
+          return newSortedRooms;
+        } else {
+          const { encryptedTextForRecipient, sender } = message;
+          if (!encryptedTextForRecipient) {
+            console.error(
+              "Missing encryptedTextForRecipient in message notification"
+            );
+            return prevRooms;
+          }
+          const { ciphertextBase64, nonceBase64 } = JSON.parse(
+            encryptedTextForRecipient
           );
 
-        return prevRooms; // Return previous state immediately, update will happen in .then()
+          decryptMessage(
+            ciphertextBase64,
+            nonceBase64,
+            sender.publicKey,
+            privateKey
+          )
+            .then((decryptedText) => {
+              setChatRooms((currentRooms) => {
+                const updatedRoom = {
+                  ...roomToUpdate,
+                  lastMessage: message,
+                  lastMessagePreview: `${message.sender.username}: ${decryptedText}`,
+                  lastMessageTimestamp: message.createdAt,
+                  unreadCount: unreadCountUpdate,
+                };
+                const otherRooms = currentRooms.filter(
+                  (r) => r._id !== message.chatroomId
+                );
+                const newSortedRooms = [updatedRoom, ...otherRooms];
+                newSortedRooms.sort(
+                  (a, b) =>
+                    new Date(b.lastMessageTimestamp || 0).getTime() -
+                    new Date(a.lastMessageTimestamp || 0).getTime()
+                );
+                return newSortedRooms;
+              });
+            })
+            .catch((e) =>
+              console.error("Failed to decrypt notification snippet", e)
+            );
+
+          return prevRooms;
+        }
       });
     };
 
     socket.on("new_message_notification", handleNotification);
-
     return () => {
       socket.off("new_message_notification", handleNotification);
     };
-  }, [socket, user]);
+  }, [socket, user, selectedChat]);
 
   const handleOptimisticUpdate = (chatRoomId: string, message: Message) => {
     setChatRooms((prevRooms) => {
       const roomIndex = prevRooms.findIndex((r) => r._id === chatRoomId);
       if (roomIndex === -1) return prevRooms;
       const roomToUpdate = { ...prevRooms[roomIndex] };
+
+      let previewText = "";
+      if (message.type === "text") {
+        previewText = `You: ${message.text}`;
+      } else {
+        const fileType = message.type === "image" ? "Image" : "File";
+        const filename = message.fileMetadata?.filename || "Encrypted File";
+        previewText = `You: [${fileType}: ${filename}]`;
+      }
+
       const updatedRoom = {
         ...roomToUpdate,
         lastMessage: message,
-        lastMessagePreview: `You: ${message.text}`,
+        lastMessagePreview: previewText,
         lastMessageTimestamp: message.createdAt,
       };
       const otherRooms = prevRooms.filter((r) => r._id !== chatRoomId);
@@ -183,19 +237,38 @@ export const ChatPage: React.FC = () => {
   const handleSelectChat = (room: ChatRoom) => {
     setSelectedChat(room);
     if (!user) return;
+
+    const currentUnreadCount =
+      chatRooms.find((r) => r._id === room._id)?.unreadCount?.[user._id] || 0;
+
+    if (currentUnreadCount > 0) {
+      const originalRooms = chatRooms;
+
+      setChatRooms((prev) =>
+        prev.map((r) =>
+          r._id === room._id
+            ? { ...r, unreadCount: { ...r.unreadCount, [user._id]: 0 } }
+            : r
+        )
+      );
+
+      markChatAsRead(room._id).catch((err) => {
+        console.error("Failed to mark chat as read on server:", err);
+        setChatRooms(originalRooms);
+      });
+    }
+
     setChatRooms((prevRooms) => {
       const roomIndex = prevRooms.findIndex((r) => r._id === room._id);
-      if (
-        roomIndex === -1 ||
-        (prevRooms[roomIndex].unreadCount?.[user._id] || 0) === 0
-      ) {
-        return prevRooms;
-      }
+      if (roomIndex === -1) return prevRooms;
+
       const roomToUpdate = { ...prevRooms[roomIndex] };
+
       const updatedRoom = {
         ...roomToUpdate,
         unreadCount: { ...roomToUpdate.unreadCount, [user._id]: 0 },
       };
+
       const otherRooms = prevRooms.filter((r) => r._id !== room._id);
       return [updatedRoom, ...otherRooms].sort(
         (a, b) =>

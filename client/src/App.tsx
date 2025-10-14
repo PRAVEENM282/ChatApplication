@@ -11,14 +11,13 @@ import { AuthPage } from "./features/auth/pages/AuthPage";
 import { ChatPage } from "./features/chat/pages/ChatPage";
 import CryptoRoundtripTest from "./tests/CryptoRoundtripTest";
 import { PresenceProvider } from "./context/PresenceProvider";
+import { ProfilePage } from "./features/profile/pages/ProfilePage";
 
-// ✅ Protected route wrapper
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated } = useAuth();
   return isAuthenticated ? <>{children}</> : <Navigate to="/auth" replace />;
 };
 
-// ✅ Redirect if already logged in
 const AuthRedirector = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated } = useAuth();
   return isAuthenticated ? <Navigate to="/" replace /> : <>{children}</>;
@@ -42,6 +41,14 @@ function App() {
             }
           />
           <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <ProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/auth"
             element={
               <AuthRedirector>
@@ -49,7 +56,6 @@ function App() {
               </AuthRedirector>
             }
           />
-          {/* 🔹 Debug Route for crypto testing */}
           <Route path="/crypto-test" element={<CryptoRoundtripTest />} />
         </Routes>
       </Router>

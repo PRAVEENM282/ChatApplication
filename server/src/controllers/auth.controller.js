@@ -1,19 +1,12 @@
 import User from "../models/User.js";
 import bcrypt from "bcrypt";
-// No longer need 'generateKeyPairSync' as the client handles key generation
 import dotenv from "dotenv";
 import jwt, { decode } from "jsonwebtoken";
 import mongoose from "mongoose";
 import cookieParser from "cookie-parser";
 
 dotenv.config();
-
-/**
- * Handles new user registration securely.
- * Assumes the client generates the key pair and sends the public key.
- */
 export const register = async (req, res) => {
-  // The client MUST send its public key in the request body.
   const { username, email, password, publicKey } = req.body;
 
   if (!username || !email || !password || !publicKey) {
@@ -23,12 +16,11 @@ export const register = async (req, res) => {
   }
 
   try {
-    // Check if the username or email is already taken
     const duplicate = await User.findOne({
       $or: [{ email: email }, { username: username }],
     })
       .lean()
-      .exec(); // .lean() makes the query faster as we only need to check for existence
+      .exec();
 
     if (duplicate) {
       return res
@@ -36,13 +28,8 @@ export const register = async (req, res) => {
         .json({ message: "Username or email is already taken" });
     }
 
-    // Hash the user's password for secure storage
     const hashPwd = await bcrypt.hash(password, 10);
-
-    // Create a new user ID ahead of time to use in JWTs
     const newUserId = new mongoose.Types.ObjectId();
-
-    // Create tokens before creating the user to save everything in one step
     const accessToken = jwt.sign(
       { userId: newUserId },
       process.env.ACCESS_TOKEN_SECRET,
@@ -55,23 +42,18 @@ export const register = async (req, res) => {
       { expiresIn: "7d" }
     );
 
-    // ✅ Create the new user in a single, atomic database operation
     await User.create({
       _id: newUserId,
       username,
       email,
       password: hashPwd,
-      publicKey, // Store the public key received from the client
-      refreshToken, // Store the refresh token immediately
+      publicKey,
+      refreshToken,
     });
-
-    // Set the refresh token in an HTTP-only cookie for security
     res.cookie("jwt", refreshToken, {
       httpOnly: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
-
-    // ✅ The response correctly sends the access token.
     res.status(201).json({
       message: `New user ${username} created`,
       accessToken: accessToken,
@@ -82,9 +64,6 @@ export const register = async (req, res) => {
   }
 };
 
-/**
- * Handles user login and issues new tokens securely.
- */
 export const login = async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
@@ -93,9 +72,6 @@ export const login = async (req, res) => {
 
   try {
     const foundUser = await User.findOne({ email: email }).select("+password");
-    console.log(foundUser);
-    console.log(password);
-    console.log(email);
 
     if (!foundUser || !foundUser.password) {
       return res.status(401).json({ message: "Invalid credentials" });
@@ -107,7 +83,6 @@ export const login = async (req, res) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    // User is legitimate, create new tokens
     const accessToken = jwt.sign(
       { userId: foundUser._id },
       process.env.ACCESS_TOKEN_SECRET,
@@ -119,17 +94,13 @@ export const login = async (req, res) => {
       { expiresIn: "7d" }
     );
 
-    // Update the user's refresh token in the database
     foundUser.refreshToken = refreshToken;
     await foundUser.save();
-
-    // Set the new refresh token in the cookie
     res.cookie("jwt", refreshToken, {
       httpOnly: true,
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    // Send the access token to the client
     res.status(200).json({
       message: `${foundUser.username} welcome back`,
       accessToken: accessToken,
@@ -172,14 +143,12 @@ export const logout = async (req, res) => {
 
 export const refresh = async (req, res) => {
   const cookies = req.cookies;
-  console.log(cookies);
   if (!cookies?.jwt) {
     return res.sendStatus(401);
   }
   const refreshToken = cookies.jwt;
   try {
     const foundUser = await User.findOne({ refreshToken: refreshToken }).exec();
-    console.log(foundUser);
     if (!foundUser) {
       return res.status(404).json({ message: "unauthorized access" });
     }
@@ -211,7 +180,6 @@ export const refresh = async (req, res) => {
         });
 
         res.json({ accessToken });
-        console.log(accessToken + "  " + refreshToken);
       }
     );
   } catch (err) {

@@ -2,6 +2,8 @@ import ChatRoom from "../models/Chatroom.js";
 import User from "../models/User.js";
 import mongoose from "mongoose";
 import Message from "../models/Message.js";
+import { saveFileMessage } from "./message.controller.js";
+import { getIo } from "../socket/socketHandler.js";
 
 export const createChatRoom = async (req, res) => {
   const { recipientId } = req.body;
@@ -24,15 +26,11 @@ export const createChatRoom = async (req, res) => {
       return res.status(404).json({ message: "Recipient not found" });
     }
 
-    // Sort participants by string representation to ensure consistent ordering
     const participants = [userId, recipientId]
       .sort((a, b) => a.toString().localeCompare(b.toString()))
       .map((id) => new mongoose.Types.ObjectId(id));
 
-    // Create the participant pair string for querying
     const participantPair = participants.map((p) => p.toString()).join("-");
-
-    // First try to find existing chat room using the participantPair
     let chatRoom = await ChatRoom.findOne({
       participantPair: participantPair,
     }).populate("participants", "-password -refreshToken");
@@ -42,7 +40,6 @@ export const createChatRoom = async (req, res) => {
         chatRoom = new ChatRoom({
           participants: participants,
           type: "one_to_one",
-          // participantPair will be set automatically by pre-save middleware
         });
         await chatRoom.save();
         chatRoom = await chatRoom.populate(
@@ -50,9 +47,7 @@ export const createChatRoom = async (req, res) => {
           "-password -refreshToken"
         );
       } catch (saveError) {
-        // Handle duplicate key error (race condition)
         if (saveError.code === 11000) {
-          // If duplicate, try to find the existing one again
           chatRoom = await ChatRoom.findOne({
             participantPair: participantPair,
           }).populate("participants", "-password -refreshToken");
@@ -73,24 +68,20 @@ export const createChatRoom = async (req, res) => {
   }
 };
 
-/**
- * Fetches all chat rooms for the currently authenticated user.
- */
 export const getChatRooms = async (req, res) => {
   try {
     const currentUserId = req.userId;
 
     const chatRooms = await ChatRoom.find({ participants: currentUserId })
       .populate("participants", "username publicKey avatarUrl")
-      // This is the crucial change: a nested populate
       .populate({
         path: "lastMessage",
         populate: {
           path: "sender",
-          select: "username publicKey", // Ensure we get the public key
+          select: "username publicKey",
         },
       })
-      .sort({ updatedAt: -1 }) // Sort by most recent activity
+      .sort({ updatedAt: -1 })
       .exec();
 
     res.status(200).json(chatRooms);
@@ -100,22 +91,16 @@ export const getChatRooms = async (req, res) => {
   }
 };
 
-/**
- * Fetches all messages for a specific chat room
- */
 export const getChatMessages = async (req, res) => {
   const { chatroomId } = req.params;
   const currentUserId = req.userId;
 
   try {
-    // First, verify that the user is a participant in this chat room
     const chatRoom = await ChatRoom.findById(chatroomId);
 
     if (!chatRoom) {
       return res.status(404).json({ message: "Chat room not found" });
     }
-
-    // Check if current user is a participant
     const isParticipant = chatRoom.participants.some(
       (participantId) => participantId.toString() === currentUserId.toString()
     );
@@ -126,15 +111,141 @@ export const getChatMessages = async (req, res) => {
       });
     }
 
-    // Fetch all messages for this chat room, sorted by creation time
     const messages = await Message.find({ chatroomId })
-      .sort({ createdAt: 1 }) // Oldest first
-      .populate("sender", "username publicKey") // Populate sender info
+      .sort({ createdAt: 1 })
+      .populate("sender", "username publicKey")
       .exec();
 
     res.status(200).json(messages);
   } catch (err) {
     console.error("Error fetching chat messages:", err);
     res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+
+export const markChatAsRead = async (req, res) => {
+  const { chatroomId } = req.params;
+  const { userId } = req;
+
+  try {
+    const chatRoom = await ChatRoom.findById(chatroomId);
+    if (!chatRoom) {
+      return res.status(404).json({ message: "Chat room not found" });
+    }
+
+    if (chatRoom.unreadCount.has(userId)) {
+      chatRoom.unreadCount.set(userId, 0);
+      await chatRoom.save();
+    }
+
+    res.status(200).json({ message: "Chat marked as read." });
+  } catch (err) {
+    console.error("Error marking chat as read:", err);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+export const handleFileUpload = async (req, res) => {
+  if (
+    !req.files ||
+    req.files.length === 0 ||
+    !req.body ||
+    !req.params.chatroomId
+  ) {
+    return res
+      .status(400)
+      .json({ message: "No file was uploaded or missing message data." });
+  }
+
+  const firstChunk = req.files[0];
+
+  const {
+    header,
+    keyNonce,
+    encryptedKeyForRecipient,
+    encryptedKeyForSelf,
+    keyId,
+    originalFilename,
+  } = req.body;
+
+  if (
+    !header ||
+    !keyNonce ||
+    !encryptedKeyForRecipient ||
+    !encryptedKeyForSelf ||
+    !keyId
+  ) {
+    return res.status(400).json({
+      message: "Missing required encryption metadata in request body.",
+    });
+  }
+
+  const chatroomId = req.params.chatroomId;
+  const safeKeyId = keyId.replace(/\+/g, "-").replace(/\//g, "_");
+  const clientFileName = `${safeKeyId}.chunk0.enc`;
+
+  try {
+    console.log(req.files);
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    const fileUrl = `${baseUrl}/uploads/messages/${clientFileName}`;
+
+    const messageData = {
+      chatroomId,
+      sender: req.userId,
+      type: firstChunk.mimetype.startsWith("image/") ? "image" : "file",
+      fileMetadata: {
+        filename: originalFilename,
+        fileUrl,
+        mimetype: firstChunk.mimetype,
+        size: firstChunk.size,
+        header,
+        keyNonce,
+        encryptedFileKeyForRecipient: encryptedKeyForRecipient,
+        encryptedFileKeyForSender: encryptedKeyForSelf,
+        keyId,
+      },
+    };
+
+    const savedMessage = await saveFileMessage(messageData);
+
+    if (!savedMessage) {
+      throw new Error("Failed to save message to database.");
+    }
+
+    const io = getIo();
+
+    io.to(req.userId.toString()).emit(
+      "message_sent_confirmation",
+      savedMessage
+    );
+
+    io.to(chatroomId).emit("receive_message", savedMessage);
+    const room = await ChatRoom.findById(chatroomId);
+    if (room) {
+      const recipients = room.participants.filter(
+        (p) => p.toString() !== req.userId.toString()
+      );
+
+      recipients.forEach((recipientId) => {
+        io.to(recipientId.toString()).emit("new_message_notification", {
+          chatroomId: savedMessage.chatroomId,
+          message: savedMessage,
+        });
+      });
+    }
+
+    res.status(200).json({
+      message: "File uploaded successfully.",
+      _id: savedMessage._id,
+      createdAt: savedMessage.createdAt,
+      type: savedMessage.type,
+      fileMetadata: savedMessage.fileMetadata,
+    });
+  } catch (err) {
+    console.error("Error saving file message:", err);
+    return res
+      .status(500)
+      .json({ message: "Internal server error during message saving." });
   }
 };

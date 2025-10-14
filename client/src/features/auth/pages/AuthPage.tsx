@@ -8,7 +8,6 @@ export const AuthPage = () => {
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-md bg-white shadow-md rounded-2xl p-8">
-        {/* Title */}
         <h1 className="text-3xl font-bold text-center text-gray-800 mb-6">
           Secure Chat
         </h1>
@@ -17,11 +16,7 @@ export const AuthPage = () => {
             ? "Sign in to continue to your chats"
             : "Create an account to get started"}
         </p>
-
-        {/* Forms */}
         {isLogin ? <LoginForm /> : <RegistrationForm />}
-
-        {/* Toggle */}
         <div className="mt-6 text-center">
           <button
             onClick={() => setIsLogin(!isLogin)}

@@ -13,30 +13,24 @@ const CryptoRoundtripTest = () => {
       const { publicKey: bobPub, privateKey: bobPriv } =
         sodium.crypto_box_keypair();
 
-      
-
       const { ciphertextBase64, nonceBase64 } = await encryptMessage(
         "hello bob",
-        sodium.to_base64(bobPub), // recipient pub key
-        sodium.to_base64(alicePriv) // sender priv key
+        sodium.to_base64(bobPub),
+        sodium.to_base64(alicePriv)
       );
-
-      
 
       const decrypted = await decryptMessage(
         ciphertextBase64,
         nonceBase64,
-        sodium.to_base64(alicePub), // sender pub key
-        sodium.to_base64(bobPriv) // recipient priv key
+        sodium.to_base64(alicePub),
+        sodium.to_base64(bobPriv)
       );
-
-      
     };
 
     runTest();
   }, []);
 
-  return <h1>Check the browser console for crypto roundtrip test 🔍</h1>;
+  return <h1>Check the browser console for crypto roundtrip test</h1>;
 };
 
 export default CryptoRoundtripTest;

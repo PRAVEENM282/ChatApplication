@@ -1,9 +1,8 @@
 import React from "react";
 import { ChatRoom } from "../../../types";
 import { usePresence } from "../../../context/PresenceProvider";
-import { useAuth } from "../../../context/AuthProvider"; // ✅ 1. Import useAuth
+import { useAuth } from "../../../context/AuthProvider";
 
-// Helper to format the timestamp
 function formatRelativeTime(date: string | Date | null): string {
   if (!date) return "";
   const now = new Date();
@@ -18,6 +17,9 @@ function formatRelativeTime(date: string | Date | null): string {
   if (diffHours < 24) return `${diffHours}h ago`;
   return `${diffDays}d ago`;
 }
+
+const DEFAULT_FALLBACK_AVATAR =
+  "https://api.dicebear.com/8.x/adventurer/svg?seed=User";
 
 interface ChatRoomListItemProps {
   room: ChatRoom;
@@ -38,10 +40,9 @@ export const ChatRoomListItem: React.FC<ChatRoomListItemProps> = ({
   lastMessageTimestamp,
   otherParticipantName,
 }) => {
-  const { user } = useAuth(); // ✅ 2. Get the current user
+  const { user } = useAuth();
   const { onlineUsers } = usePresence();
 
-  // ✅ 3. Correctly find the other participant by comparing with the current user's ID
   const otherParticipant = room.participants.find((p) => p._id !== user?._id);
   const isOnline = otherParticipant
     ? onlineUsers.has(otherParticipant._id)
@@ -54,16 +55,25 @@ export const ChatRoomListItem: React.FC<ChatRoomListItemProps> = ({
         isSelected ? "bg-blue-100" : "hover:bg-gray-100"
       }`}
     >
+
+      <div className="relative flex-shrink-0 mr-3">
+        <img
+          src={otherParticipant?.avatarUrl}
+          alt={otherParticipantName || "User Avatar"}
+          className="w-12 h-12 rounded-full object-cover"
+          onError={(e) => {
+            e.currentTarget.src = DEFAULT_FALLBACK_AVATAR;
+          }}
+        />
+        {isOnline && (
+          <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-gray-50"></div>
+        )}
+      </div>
       <div className="flex-grow min-w-0">
         <div className="flex justify-between items-center">
-          <div className="flex items-center space-x-2">
-            {isOnline && (
-              <div className="w-2.5 h-2.5 bg-green-500 rounded-full flex-shrink-0"></div>
-            )}
-            <h3 className="font-semibold text-gray-800 truncate">
-              {otherParticipantName}
-            </h3>
-          </div>
+          <h3 className="font-semibold text-gray-800 truncate">
+            {otherParticipantName}
+          </h3>
           {lastMessageTimestamp && (
             <div className="ml-2 text-xs text-gray-400 flex-shrink-0">
               {formatRelativeTime(lastMessageTimestamp)}

@@ -1,7 +1,7 @@
 import React from "react";
 
 interface MessageStatusProps {
-  status: "sent" | "delivered" | "read";
+  status: "sending" | "sent" | "delivered" | "read" | "failed";
   isMe: boolean;
 }
 

@@ -22,17 +22,14 @@ export const PresenceProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!socket) return;
 
-    // Initial list of online users
     socket.on("online_users", (users: string[]) => {
       setOnlineUsers(new Set(users));
     });
 
-    // A user comes online
     socket.on("user_online", (userId: string) => {
       setOnlineUsers((prev) => new Set(prev).add(userId));
     });
 
-    // A user goes offline
     socket.on("user_offline", (userId: string) => {
       setOnlineUsers((prev) => {
         const newSet = new Set(prev);
@@ -41,7 +38,6 @@ export const PresenceProvider = ({ children }: { children: ReactNode }) => {
       });
     });
 
-    // Cleanup listeners
     return () => {
       socket.off("online_users");
       socket.off("user_online");
@@ -56,7 +52,6 @@ export const PresenceProvider = ({ children }: { children: ReactNode }) => {
   );
 };
 
-// Custom hook to easily access the context
 export const usePresence = () => {
   const context = useContext(PresenceContext);
   if (context === undefined) {

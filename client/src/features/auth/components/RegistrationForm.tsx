@@ -24,7 +24,6 @@ export const RegistrationForm = () => {
 
     try {
       const data = await registerUser({ username, email, password });
-      // If registration is successful, log the user in with the new token
       if (data.accessToken) {
         login(data.accessToken);
       }
@@ -50,8 +49,6 @@ export const RegistrationForm = () => {
             {error}
           </p>
         )}
-
-        {/* Username */}
         <div>
           <label
             className="block text-gray-700 text-sm font-semibold mb-1"
@@ -69,7 +66,6 @@ export const RegistrationForm = () => {
           />
         </div>
 
-        {/* Email */}
         <div>
           <label
             className="block text-gray-700 text-sm font-semibold mb-1"
@@ -86,8 +82,6 @@ export const RegistrationForm = () => {
             required
           />
         </div>
-
-        {/* Password */}
         <div>
           <label
             className="block text-gray-700 text-sm font-semibold mb-1"
@@ -104,8 +98,6 @@ export const RegistrationForm = () => {
             required
           />
         </div>
-
-        {/* Confirm Password */}
         <div>
           <label
             className="block text-gray-700 text-sm font-semibold mb-1"
@@ -131,8 +123,6 @@ export const RegistrationForm = () => {
             <p className="text-red-500 text-xs mt-1">Passwords do not match.</p>
           )}
         </div>
-
-        {/* Submit */}
         <button
           type="submit"
           disabled={isLoading}

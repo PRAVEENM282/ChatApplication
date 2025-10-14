@@ -4,12 +4,10 @@ import dotenv from "dotenv";
 dotenv.config();
 
 export const verifyJWT = (req, res, next) => {
-  // Use req.headers.authorization for convention
   const authHeader = req.headers.authorization || req.headers.Authorization;
 
-  // Check if the header exists and is in the correct format
   if (!authHeader?.startsWith("Bearer ")) {
-    return res.sendStatus(401); // Unauthorized
+    return res.sendStatus(401);
   }
 
   const accessToken = authHeader.split(" ")[1];
