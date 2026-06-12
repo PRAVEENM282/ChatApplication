@@ -6,7 +6,10 @@ import { usePresence } from "../../../context/PresenceProvider";
 import { Message } from "./Message";
 import { decryptMessage } from "../../../services/crypto.service";
 import { MessageInput } from "./MessageInput";
-import { getChatMessages } from "../../../services/chat.service";
+import {
+  getChatMessages,
+  updateChatPreferences,
+} from "../../../services/chat.service";
 import { decryptSymmetricKey } from "../../../services/crypto.service";
 
 interface ChatWindowProps {
@@ -30,17 +33,35 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   const { user } = useAuth();
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const { onlineUsers } = usePresence();
+  const [roomPreferences, setRoomPreferences] = useState({
+    muted: chatRoom.mutedBy?.includes(user?._id || "") || false,
+    archived: chatRoom.archivedBy?.includes(user?._id || "") || false,
+    readReceipts:
+      chatRoom.readReceiptsEnabledBy?.includes(user?._id || "") !== false,
+  });
 
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   useEffect(() => {
     setMessages([]);
     setDecryptedFileKeys(new Map());
-  }, [chatRoom._id]);
+    setRoomPreferences({
+      muted: chatRoom.mutedBy?.includes(user?._id || "") || false,
+      archived: chatRoom.archivedBy?.includes(user?._id || "") || false,
+      readReceipts:
+        chatRoom.readReceiptsEnabledBy?.includes(user?._id || "") !== false,
+    });
+  }, [
+    chatRoom._id,
+    chatRoom.mutedBy,
+    chatRoom.archivedBy,
+    chatRoom.readReceiptsEnabledBy,
+    user?._id,
+  ]);
 
   const handleKeyDecryption = useCallback(
     async (
       msg: any,
-      isHistorical: boolean
+      _isHistorical: boolean
     ): Promise<Uint8Array | undefined> => {
       if (msg.type === "text") return;
 
@@ -50,9 +71,10 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
       }
 
       const encryptedKeyBase64 =
-        msg.sender._id === user?._id
+        msg.fileMetadata.encryptedFileKeys?.[user?._id || ""] ||
+        (msg.sender._id === user?._id
           ? msg.fileMetadata.encryptedFileKeyForSender
-          : msg.fileMetadata.encryptedFileKeyForRecipient;
+          : msg.fileMetadata.encryptedFileKeyForRecipient);
 
       const keyNonceBase64 = msg.fileMetadata.keyNonce;
 
@@ -83,6 +105,18 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     },
     [user]
   );
+
+  const getEncryptedTextForCurrentUser = useCallback(
+    (msg: any) => {
+      if (user?._id && msg.encryptedPayloads?.[user._id]) {
+        return JSON.stringify(msg.encryptedPayloads[user._id]);
+      }
+      return msg.sender._id === user?._id
+        ? msg.encryptedTextForSender
+        : msg.encryptedTextForRecipient;
+    },
+    [user?._id]
+  );
   useEffect(() => {
     const fetchHistoricalMessages = async () => {
       if (!chatRoom._id || !user) return;
@@ -101,10 +135,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
             if (msg.type === "text") {
               const myPrivateKey = localStorage.getItem("privateKey");
               if (myPrivateKey) {
-                const encryptedText =
-                  msg.sender._id === user._id
-                    ? msg.encryptedTextForSender
-                    : msg.encryptedTextForRecipient;
+                const encryptedText = getEncryptedTextForCurrentUser(msg);
 
                 if (encryptedText && typeof encryptedText === "string") {
                   const { ciphertextBase64, nonceBase64 } =
@@ -138,8 +169,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
               _id: msg._id,
               chatroomId: msg.chatroomId,
               sender: msg.sender,
-              encryptedTextForRecipient: msg.encryptedTextForRecipient,
               encryptedTextForSender: msg.encryptedTextForSender,
+              encryptedPayloads: msg.encryptedPayloads,
               text: decryptedText,
               createdAt: msg.createdAt,
               status: status,
@@ -153,6 +184,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
               sender: msg.sender,
               encryptedTextForRecipient: msg.encryptedTextForRecipient,
               encryptedTextForSender: msg.encryptedTextForSender,
+              encryptedPayloads: msg.encryptedPayloads,
               text: "[Failed to decrypt]",
               createdAt: msg.createdAt,
               status: msg.status || "sent",
@@ -171,7 +203,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     };
 
     fetchHistoricalMessages();
-  }, [chatRoom._id, user, handleKeyDecryption]);
+  }, [chatRoom._id, user, handleKeyDecryption, getEncryptedTextForCurrentUser]);
 
   useEffect(() => {
     if (chatRoom._id && socket) {
@@ -201,9 +233,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
           const myPrivateKey = localStorage.getItem("privateKey");
           if (!myPrivateKey) return;
 
-          const { ciphertextBase64, nonceBase64 } = JSON.parse(
-            savedMessage.encryptedTextForRecipient
-          );
+          const encryptedText = getEncryptedTextForCurrentUser(savedMessage);
+          if (!encryptedText) throw new Error("Missing encrypted payload");
+          const { ciphertextBase64, nonceBase64 } = JSON.parse(encryptedText);
 
           plaintext = await decryptMessage(
             ciphertextBase64,
@@ -229,6 +261,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
         sender: savedMessage.sender,
         encryptedTextForRecipient: savedMessage.encryptedTextForRecipient,
         encryptedTextForSender: savedMessage.encryptedTextForSender,
+        encryptedPayloads: savedMessage.encryptedPayloads,
         text: plaintext,
         createdAt: savedMessage.createdAt,
         status: status,
@@ -250,7 +283,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
       setMessages((prev) => {
         const finalServerId = serverMessage._id;
         const tempMsgIndex = prev.findIndex(
-          (msg) => msg._id.startsWith("temp-") && msg.sender._id === user._id
+          (msg) => msg._id.startsWith("temp-") && msg.sender._id === user?._id
         );
         const finalMsgExists = prev.some((msg) => msg._id === finalServerId);
 
@@ -281,7 +314,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
       socket.off("receive_message", handleReceiveMessage);
       socket.off("message_sent_confirmation", handleSentConfirmation);
     };
-  }, [socket, user?._id, chatRoom._id, handleKeyDecryption]);
+  }, [socket, user, chatRoom._id, handleKeyDecryption, getEncryptedTextForCurrentUser]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -317,6 +350,14 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   const otherParticipant = chatRoom.participants.find(
     (p) => p._id !== user?._id
   );
+  const chatTitle =
+    chatRoom.type === "group"
+      ? chatRoom.name || "Group chat"
+      : otherParticipant?.username || "Chat";
+  const chatAvatar =
+    chatRoom.type === "group"
+      ? chatRoom.avatarUrl || DEFAULT_FALLBACK_AVATAR
+      : otherParticipant?.avatarUrl;
   const isOnline = otherParticipant
     ? onlineUsers.has(otherParticipant._id)
     : false;
@@ -343,8 +384,22 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     setMessages((prev) => [...prev, msg]);
   };
 
+  const toggleRoomPreference = async (
+    key: "muted" | "archived" | "readReceipts"
+  ) => {
+    const prev = roomPreferences;
+    const next = { ...prev, [key]: !prev[key] };
+    setRoomPreferences(next);
+    try {
+      await updateChatPreferences(chatRoom._id, { [key]: next[key] });
+    } catch {
+      setRoomPreferences(prev);
+    }
+  };
+
   useEffect(() => {
     if (!socket || !user) return;
+    if (!roomPreferences.readReceipts || user.settings?.readReceiptsEnabled === false) return;
 
     const handleStatusUpdate = ({
       messageId,
@@ -375,7 +430,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
       socket.off("message_status_updated", handleStatusUpdate);
       socket.off("messages_read_by_recipient", handleMessagesRead);
     };
-  }, [socket, user, chatRoom._id]);
+  }, [socket, user, chatRoom._id, roomPreferences.readReceipts]);
   useEffect(() => {
     if (!socket || !user) return;
     messages.forEach((msg) => {
@@ -409,14 +464,14 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
         });
       }
     }
-  }, [messages, socket, user, chatRoom.participants, chatRoom._id]);
+  }, [messages, socket, user, chatRoom.participants, chatRoom._id, roomPreferences.readReceipts]);
 
   return (
     <div className="flex-1 flex flex-col h-full">
       
       <div className="p-4 border-b border-gray-300 bg-gray-100 flex items-center gap-4 flex-shrink-0">
         <img
-          src={otherParticipant?.avatarUrl}
+          src={chatAvatar}
           alt="user avatar"
           className="w-12 h-12 rounded-full object-cover"
           onError={(e) => {
@@ -425,9 +480,31 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
         />
         <div>
           <h2 className="text-xl font-bold">
-            {otherParticipant?.username || "Chat"}
+            {chatTitle}
           </h2>
-          {isOnline && <p className="text-xs text-green-600">Online</p>}
+          {chatRoom.type === "group" ? (
+            <p className="text-xs text-gray-500">
+              {chatRoom.participants.length} members
+            </p>
+          ) : (
+            isOnline && <p className="text-xs text-green-600">Online</p>
+          )}
+        </div>
+        <div className="ml-auto flex gap-2">
+          <button
+            type="button"
+            onClick={() => toggleRoomPreference("muted")}
+            className="px-3 py-1 rounded-md bg-white border border-gray-300 text-xs"
+          >
+            {roomPreferences.muted ? "Unmute" : "Mute"}
+          </button>
+          <button
+            type="button"
+            onClick={() => toggleRoomPreference("archived")}
+            className="px-3 py-1 rounded-md bg-white border border-gray-300 text-xs"
+          >
+            {roomPreferences.archived ? "Unarchive" : "Archive"}
+          </button>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto bg-gray-200 min-h-0">

@@ -2,7 +2,10 @@ import React, { useRef, useState } from "react";
 import { useSocket } from "../../../context/SocketProvider";
 import { useAuth } from "../../../context/AuthProvider";
 import { ChatRoom, Message } from "../../../types/chat.types";
-import { encryptFile, encryptMessage } from "../../../services/crypto.service";
+import {
+  encryptFileForParticipants,
+  encryptMessageForParticipants,
+} from "../../../services/crypto.service";
 import { sendEncryptedFile } from "../../../services/chat.service";
 import { Paperclip, X } from "lucide-react";
 
@@ -53,18 +56,17 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       const myPrivateKey = localStorage.getItem("privateKey");
       if (!myPrivateKey) throw new Error("Private key not found!");
 
-      const recipient = chatRoom.participants.find((p) => p._id !== user._id);
-      if (!recipient) throw new Error("Recipient not found!");
+      const participants = chatRoom.participants.map((p) => ({
+        userId: p._id,
+        publicKey: p.publicKey,
+      }));
 
-      const myPublicKey = user.publicKey;
-      if (!myPublicKey) throw new Error("My public key not found!");
-
-      const cryptoData = await encryptFile(
+      const cryptoData = await encryptFileForParticipants(
         file,
-        recipient.publicKey,
-        myPrivateKey,
-        myPublicKey
+        participants,
+        myPrivateKey
       );
+      const recipient = chatRoom.participants.find((p) => p._id !== user._id);
 
       const totalChunks = cryptoData.encryptedChunks.length;
 
@@ -85,8 +87,10 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           size: file.size,
           header: cryptoData.header,
           keyNonce: cryptoData.keyNonce,
-          encryptedFileKeyForRecipient: cryptoData.encryptedKeyForRecipient,
-          encryptedFileKeyForSender: cryptoData.encryptedKeyForSelf,
+          encryptedFileKeyForRecipient:
+            (recipient && cryptoData.encryptedFileKeys[recipient._id]) || "",
+          encryptedFileKeyForSender: cryptoData.encryptedFileKeys[user._id],
+          encryptedFileKeys: cryptoData.encryptedFileKeys,
           keyId: cryptoData.keyId,
           totalChunks: totalChunks,
         },
@@ -113,11 +117,14 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 
       formData.append("header", cryptoData.header);
       formData.append("keyNonce", cryptoData.keyNonce);
-      formData.append(
-        "encryptedKeyForRecipient",
-        cryptoData.encryptedKeyForRecipient
-      );
-      formData.append("encryptedKeyForSelf", cryptoData.encryptedKeyForSelf);
+      formData.append("encryptedFileKeys", JSON.stringify(cryptoData.encryptedFileKeys));
+      if (recipient && cryptoData.encryptedFileKeys[recipient._id]) {
+        formData.append(
+          "encryptedKeyForRecipient",
+          cryptoData.encryptedFileKeys[recipient._id]
+        );
+      }
+      formData.append("encryptedKeyForSelf", cryptoData.encryptedFileKeys[user._id]);
       formData.append("keyId", cryptoData.keyId);
       formData.append("originalExtension", originalFileExtension);
       formData.append("totalChunks", totalChunks.toString());
@@ -150,21 +157,27 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       const myPrivateKey = localStorage.getItem("privateKey");
       if (!myPrivateKey) throw new Error("Private key not found!");
 
-      const recipient = chatRoom.participants.find((p) => p._id !== user._id);
-      if (!recipient) throw new Error("Recipient not found!");
-
       const createdAt = new Date().toISOString();
+      const participants = chatRoom.participants.map((p) => ({
+        userId: p._id,
+        publicKey: p.publicKey,
+      }));
 
-      const [encryptedPayloadRecipient, encryptedPayloadSender] =
-        await Promise.all([
-          encryptMessage(text, recipient.publicKey, myPrivateKey),
-          encryptMessage(text, user.publicKey, myPrivateKey),
-        ]);
+      const encryptedPayloads = await encryptMessageForParticipants(
+        text,
+        participants,
+        myPrivateKey
+      );
+      const recipient = chatRoom.participants.find((p) => p._id !== user._id);
 
       const messagePayload = {
         chatroomId: chatRoom._id,
-        encryptedTextForRecipient: JSON.stringify(encryptedPayloadRecipient),
-        encryptedTextForSender: JSON.stringify(encryptedPayloadSender),
+        encryptedPayloads,
+        encryptedTextForRecipient:
+          recipient && encryptedPayloads[recipient._id]
+            ? JSON.stringify(encryptedPayloads[recipient._id])
+            : undefined,
+        encryptedTextForSender: JSON.stringify(encryptedPayloads[user._id]),
       };
 
       const localMessage: Message = {
@@ -175,6 +188,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         createdAt: createdAt,
         encryptedTextForRecipient: messagePayload.encryptedTextForRecipient,
         encryptedTextForSender: messagePayload.encryptedTextForSender,
+        encryptedPayloads,
         status: "sent",
         type: "text",
       };

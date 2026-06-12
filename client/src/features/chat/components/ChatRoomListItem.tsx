@@ -47,6 +47,10 @@ export const ChatRoomListItem: React.FC<ChatRoomListItemProps> = ({
   const isOnline = otherParticipant
     ? onlineUsers.has(otherParticipant._id)
     : false;
+  const avatarSrc =
+    room.type === "group"
+      ? room.avatarUrl || DEFAULT_FALLBACK_AVATAR
+      : otherParticipant?.avatarUrl;
 
   return (
     <div
@@ -58,14 +62,14 @@ export const ChatRoomListItem: React.FC<ChatRoomListItemProps> = ({
 
       <div className="relative flex-shrink-0 mr-3">
         <img
-          src={otherParticipant?.avatarUrl}
+          src={avatarSrc}
           alt={otherParticipantName || "User Avatar"}
           className="w-12 h-12 rounded-full object-cover"
           onError={(e) => {
             e.currentTarget.src = DEFAULT_FALLBACK_AVATAR;
           }}
         />
-        {isOnline && (
+        {room.type !== "group" && isOnline && (
           <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-gray-50"></div>
         )}
       </div>
@@ -81,7 +85,9 @@ export const ChatRoomListItem: React.FC<ChatRoomListItemProps> = ({
           )}
         </div>
         <div className="flex justify-between items-start mt-1">
-          <p className="text-sm text-gray-600 truncate">{lastMessagePreview}</p>
+          <p className="text-sm text-gray-600 truncate">
+            {lastMessagePreview}
+          </p>
           {unreadCount > 0 && (
             <span className="ml-2 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0">
               {unreadCount}

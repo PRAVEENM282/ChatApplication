@@ -4,30 +4,26 @@ import { useAuth } from "../../../context/AuthProvider";
 import { MessageStatus } from "./MessageStatus";
 import axios from "axios"; 
 import { decryptFileSymmetrically } from "../../../services/crypto.service"; 
-
 interface MessageProps {
   message: MessageType;
-  decryptedFileKey?: Uint8Array; 
+  decryptedFileKey?: Uint8Array;
 }
-
-const DEFAULT_FALLBACK_AVATAR =
-  "https://static.productionready.io/images/smiley-cyrus.jpg";
 
 const FileRenderer: React.FC<{
   message: MessageType;
   decryptedFileKey?: Uint8Array;
 }> = ({ message, decryptedFileKey }) => {
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const isImage = message.type === "image";
+
   if (!message.fileMetadata) {
     return <p className="text-red-500">Error: Missing file metadata.</p>;
   }
 
-  const { fileUrl, header, keyId, filename, mimetype, size } =
+  const { fileUrl, chunkUrls, header, filename, mimetype, size } =
     message.fileMetadata;
-
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadError, setDownloadError] = useState<string | null>(null);
-  const [blobUrl, setBlobUrl] = useState<string | null>(null); 
-  const isImage = message.type === "image";
   const totalChunks = message.fileMetadata?.totalChunks || 1;
 
   const handleDownload = async () => {
@@ -43,10 +39,9 @@ const FileRenderer: React.FC<{
     try {
       const encryptedChunks: Uint8Array[] = [];
       for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-        const chunkUrl = fileUrl.replace(
-          /\.chunk0\.enc$/,
-          `.chunk${chunkIndex}.enc`
-        );
+        const chunkUrl =
+          chunkUrls?.[chunkIndex] ||
+          fileUrl.replace(/\.chunk0\.enc$/, `.chunk${chunkIndex}.enc`);
         try {
           const response = await axios.get(chunkUrl, {
             responseType: "arraybuffer",

@@ -3,10 +3,14 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
 
-// TypeScript: ensure the element is not null and is the right type
+/**
+ * Root React engine bootstrap script.
+ * Binds React render tree to the #root DOM element.
+ */
 const rootElement = document.getElementById("root");
-if (!rootElement) throw new Error("Root container not found");
-const root = ReactDOM.createRoot(rootElement); // root is now a Root object
+if (!rootElement) throw new Error("Root HTML container #root not found in document");
+
+const root = ReactDOM.createRoot(rootElement);
 
 root.render(
   <React.StrictMode>

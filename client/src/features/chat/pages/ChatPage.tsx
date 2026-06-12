@@ -39,13 +39,17 @@ const processRoomForPreview = async (
       return newRoom;
     }
 
-    const encryptedStr = isMyMessage
+  const encryptedStr = isMyMessage
       ? encryptedTextForSender
       : encryptedTextForRecipient;
+    const envelopeStr =
+      newRoom.lastMessage.encryptedPayloads?.[userId]
+        ? JSON.stringify(newRoom.lastMessage.encryptedPayloads[userId])
+        : encryptedStr;
 
-    if (!encryptedStr) throw new Error("Missing encrypted text for preview");
+    if (!envelopeStr) throw new Error("Missing encrypted text for preview");
 
-    const { ciphertextBase64, nonceBase64 } = JSON.parse(encryptedStr);
+    const { ciphertextBase64, nonceBase64 } = JSON.parse(envelopeStr);
 
     const decryptedText = await decryptMessage(
       ciphertextBase64.trim(),
@@ -149,16 +153,18 @@ export const ChatPage: React.FC = () => {
           );
           return newSortedRooms;
         } else {
-          const { encryptedTextForRecipient, sender } = message;
-          if (!encryptedTextForRecipient) {
+          const encryptedText =
+            message.encryptedPayloads?.[user._id]
+              ? JSON.stringify(message.encryptedPayloads[user._id])
+              : message.encryptedTextForRecipient;
+          const { sender } = message;
+          if (!encryptedText) {
             console.error(
-              "Missing encryptedTextForRecipient in message notification"
+              "Missing encrypted payload in message notification"
             );
             return prevRooms;
           }
-          const { ciphertextBase64, nonceBase64 } = JSON.parse(
-            encryptedTextForRecipient
-          );
+          const { ciphertextBase64, nonceBase64 } = JSON.parse(encryptedText);
 
           decryptMessage(
             ciphertextBase64,

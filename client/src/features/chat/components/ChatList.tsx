@@ -6,22 +6,7 @@ import { Link } from "react-router-dom";
 
 const DEFAULT_FALLBACK_AVATAR =
   "https://api.dicebear.com/8.x/adventurer/svg?seed=User";
-const UserIcon = () => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="20"
-    height="20"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-    <circle cx="12" cy="7" r="4" />
-  </svg>
-);
+// small inline SVG icon was removed (unused)
 
 interface ChatListProps {
   chatRooms: ChatRoom[];
@@ -43,6 +28,7 @@ export const ChatList: React.FC<ChatListProps> = ({
   const { user, logout } = useAuth();
 
   const getOtherParticipantName = (room: ChatRoom) => {
+    if (room.type === "group") return room.name || "Group chat";
     if (!user) return "Unknown User";
     const other = room.participants.find((p) => p._id !== user._id);
     return other?.username || "Unknown User";
