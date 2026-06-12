@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import React from "react";
-import sodium from "libsodium-wrappers";
+import sodium from "libsodium-wrappers-sumo";
 import { encryptMessage, decryptMessage } from "../services/crypto.service";
 
 const CryptoRoundtripTest = () => {
@@ -25,6 +25,7 @@ const CryptoRoundtripTest = () => {
         sodium.to_base64(alicePub),
         sodium.to_base64(bobPriv)
       );
+      console.log("CryptoRoundtrip decrypted:", decrypted);
     };
 
     runTest();

@@ -3,14 +3,22 @@ import { User } from "./user.types";
 export interface FileMetadata {
   filename: string;
   fileUrl: string; // URL to the encrypted file chunk (chunk 0)
+  chunkUrls?: string[];
+  storageKeys?: string[];
   mimetype: string;
   size: number;
   header: string; // libsodium stream header
   keyNonce: string; // Nonce used to wrap the symmetric key
   encryptedFileKeyForRecipient: string; // Asymmetrically encrypted symmetric key
   encryptedFileKeyForSender: string;
+  encryptedFileKeys?: Record<string, string>;
   keyId: string;
   totalChunks: number;
+}
+
+export interface EncryptedPayload {
+  ciphertextBase64: string;
+  nonceBase64: string;
 }
 
 // This interface defines the shape of a single Message object
@@ -20,6 +28,7 @@ export interface Message {
   sender: User;
   encryptedTextForRecipient?: string; // Made optional for file messages
   encryptedTextForSender?: string; // Made optional for file messages
+  encryptedPayloads?: Record<string, EncryptedPayload>;
   text?: string; // Holds the decrypted message, or file name for files
   status: "sending" | "sent" | "delivered" | "read" | "failed";
   type: "text" | "image" | "file"; // Updated enum
@@ -32,6 +41,10 @@ export interface ChatRoom {
   _id: string;
   participants: User[]; // Assumes participant details will be populated
   type: "one_to_one" | "group";
+  name?: string;
+  avatarUrl?: string;
+  admins?: string[];
+  createdBy?: string;
   lastMessage?: Message; // The last message can be optional
   unreadCount?: { [userId: string]: number }; // Represents a Map in TS
   lastMessagePreview?: string;
@@ -42,6 +55,7 @@ export interface ChatRoom {
   blockedBy?: string;
   mutedBy?: string[];
   archivedBy?: string[];
+  readReceiptsEnabledBy?: string[];
   createdAt: string;
   updatedAt?: string;
 }
