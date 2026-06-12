@@ -1,0 +1,34 @@
+## Root .gitignore - consolidated
+
+# Node
+node_modules/
+**/node_modules/
+
+# Builds and caches
+dist/
+build/
+.vite/
+**/.vite/
+coverage/
+.turbo/
+
+# Environment and secrets
+.env
+.env.*
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# OS and Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Runtime uploads and generated assets
+server/public/uploads/
+public/uploads/

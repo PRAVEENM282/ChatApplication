@@ -1,8 +1,12 @@
-import multer from "multer"; // ✅ ADDED MULTER IMPORT
+import multer from "multer";
 
+/**
+ * Express error-handling middleware specifically designed to catch and format
+ * file upload errors thrown by Multer (e.g. limit violations, unsupported types).
+ */
 export function multerErrorHandler(err, req, res, next) {
   if (err instanceof multer.MulterError) {
-    // Multer-specific errors
+    // Catch files exceeding set max-sizes
     if (err.code === "LIMIT_FILE_SIZE") {
       return res
         .status(400)
@@ -10,7 +14,7 @@ export function multerErrorHandler(err, req, res, next) {
     }
     return res.status(400).json({ message: err.message });
   } else if (err) {
-    // Other errors
+    // Catch custom filter errors (e.g. MIME restrictions from fileFilter)
     return res
       .status(400)
       .json({ message: err.message || "File upload failed." });

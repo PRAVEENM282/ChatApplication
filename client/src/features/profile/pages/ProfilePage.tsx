@@ -4,9 +4,17 @@ import {
   updateUserPassword,
   updateUserProfile,
   updateUserAvatar,
+  updateMyKeyVault,
+  updateMySettings,
+  getMySessions,
+  revokeSession,
+  revokeOtherSessions,
+  type SessionInfo,
 } from "../../../services/user.service";
+import { encryptPrivateKeyToVault } from "../../../services/keyVault.service";
 import { Link } from "react-router-dom";
 import { User } from "../../../types";
+import { decryptMessage, encryptMessage } from "../../../services/crypto.service";
 
 const BackArrowIcon = () => (
   <svg
@@ -49,6 +57,14 @@ export const ProfilePage: React.FC = () => {
   const [avatarError, setAvatarError] = useState("");
   const [avatarSuccess, setAvatarSuccess] = useState("");
   const [isAvatarLoading, setIsAvatarLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<"account" | "security" | "chat">(
+    "account"
+  );
+  const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [settingsStatus, setSettingsStatus] = useState("");
+  const [securityStatus, setSecurityStatus] = useState("");
+  const [restorePassword, setRestorePassword] = useState("");
+  const [keyVaultInput, setKeyVaultInput] = useState("");
 
   useEffect(() => {
     
@@ -58,6 +74,14 @@ export const ProfilePage: React.FC = () => {
       setAvatarPreview(DEFAULT_FALLBACK_AVATAR);
     }
   }, [user?.avatarUrl]);
+
+  useEffect(() => {
+    if (activeTab === "security") {
+      getMySessions()
+        .then(setSessions)
+        .catch(() => setSecurityStatus("Could not load active sessions."));
+    }
+  }, [activeTab]);
 
   const handleUsernameSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -92,6 +116,14 @@ export const ProfilePage: React.FC = () => {
     setIsPasswordLoading(true);
     try {
       await updateUserPassword(currentPassword, newPassword);
+
+      // Re-encrypt and persist the private key vault with the NEW password so multi-device login keeps working.
+      const privateKey = localStorage.getItem("privateKey");
+      if (privateKey) {
+        const keyVault = await encryptPrivateKeyToVault(privateKey, newPassword);
+        await updateMyKeyVault(keyVault);
+      }
+
       setPasswordSuccess("Password updated successfully!");
       setCurrentPassword("");
       setNewPassword("");
@@ -139,6 +171,105 @@ export const ProfilePage: React.FC = () => {
     }
   };
 
+  const handleExportPrivateKey = () => {
+    const privateKey = localStorage.getItem("privateKey");
+    if (!privateKey) {
+      setSecurityStatus("Private key is not available on this device.");
+      return;
+    }
+    setKeyVaultInput(privateKey);
+    setSecurityStatus("Private key loaded below. Keep it secret.");
+  };
+
+  const handleRestorePrivateKey = async () => {
+    if (!keyVaultInput.trim()) {
+      setSecurityStatus("Paste a private key first.");
+      return;
+    }
+    const inputKey = keyVaultInput.trim();
+    try {
+      const decoded = atob(inputKey);
+      if (decoded.length !== 32) {
+        throw new Error("Invalid length");
+      }
+    } catch {
+      setSecurityStatus("Invalid private key format.");
+      return;
+    }
+
+    localStorage.setItem("privateKey", inputKey);
+    if (restorePassword) {
+      const keyVault = await encryptPrivateKeyToVault(
+        inputKey,
+        restorePassword
+      );
+      await updateMyKeyVault(keyVault);
+    }
+    setSecurityStatus("Private key restored on this device.");
+  };
+
+  const handleCryptoSelfTest = async () => {
+    const privateKey = localStorage.getItem("privateKey");
+    if (!privateKey || !user?.publicKey) {
+      setSecurityStatus("Missing local private key or public key.");
+      return;
+    }
+    try {
+      const encrypted = await encryptMessage(
+        "secure-chat-self-test",
+        user.publicKey,
+        privateKey
+      );
+      const decrypted = await decryptMessage(
+        encrypted.ciphertextBase64,
+        encrypted.nonceBase64,
+        user.publicKey,
+        privateKey
+      );
+      setSecurityStatus(
+        decrypted === "secure-chat-self-test"
+          ? "Encryption self-test passed."
+          : "Encryption self-test failed."
+      );
+    } catch {
+      setSecurityStatus("Encryption self-test failed.");
+    }
+  };
+
+  const handleRevokeSession = async (sessionId: string) => {
+    try {
+      await revokeSession(sessionId);
+      setSessions(await getMySessions());
+    } catch (err: any) {
+      setSecurityStatus("Failed to revoke session: " + (err.message || "Unknown error"));
+    }
+  };
+
+  const handleRevokeOthers = async () => {
+    try {
+      await revokeOtherSessions();
+      setSessions(await getMySessions());
+    } catch (err: any) {
+      setSecurityStatus("Failed to revoke other sessions: " + (err.message || "Unknown error"));
+    }
+  };
+
+  const handleSettingToggle = async (
+    key:
+      | "notificationsEnabled"
+      | "readReceiptsEnabled"
+      | "encryptedFilePreviewsEnabled",
+    value: boolean
+  ) => {
+    try {
+      const updatedUser = await updateMySettings({ [key]: value });
+      updateUser(updatedUser as User);
+      setSettingsStatus("Settings saved.");
+    } catch (err: any) {
+      setSettingsStatus("Failed to save settings: " + (err.message || "Unknown error"));
+    }
+  };
+
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
       <header className="p-4 bg-white border-b border-gray-200 shadow-sm flex-shrink-0">
@@ -152,7 +283,7 @@ export const ProfilePage: React.FC = () => {
       </header>
 
       <main className="flex-grow flex items-center justify-center p-4">
-        <div className="w-full max-w-lg p-8 space-y-8 bg-white shadow-xl rounded-2xl">
+        <div className="w-full max-w-3xl p-8 space-y-8 bg-white shadow-xl rounded-2xl">
           <div className="text-center">
             <h1 className="text-3xl font-bold text-gray-900">Edit Profile</h1>
             <p className="mt-2 text-sm text-gray-500">
@@ -160,6 +291,25 @@ export const ProfilePage: React.FC = () => {
             </p>
           </div>
 
+          <div className="grid grid-cols-3 gap-2">
+            {(["account", "security", "chat"] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveTab(tab)}
+                className={`p-2 rounded-lg font-semibold capitalize ${
+                  activeTab === tab
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-100 text-gray-700"
+                }`}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+
+          {activeTab === "account" && (
+          <>
           <form
             onSubmit={handleAvatarSubmit}
             className="flex flex-col items-center space-y-4"
@@ -323,6 +473,142 @@ export const ProfilePage: React.FC = () => {
               </p>
             )}
           </div>
+          </>
+          )}
+
+          {activeTab === "security" && (
+            <div className="space-y-6">
+              <div className="rounded-lg border border-gray-200 p-4">
+                <h2 className="text-xl font-bold text-gray-800 mb-3">
+                  Encryption Keys
+                </h2>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handleExportPrivateKey}
+                    className="px-4 py-2 bg-gray-800 text-white rounded-lg"
+                  >
+                    Export Private Key
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCryptoSelfTest}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg"
+                  >
+                    Run Encryption Test
+                  </button>
+                </div>
+                <textarea
+                  value={keyVaultInput}
+                  onChange={(e) => setKeyVaultInput(e.target.value)}
+                  placeholder="Paste private key here to restore on this device"
+                  className="mt-4 w-full min-h-24 p-3 border border-gray-300 rounded-lg text-xs"
+                />
+                <input
+                  type="password"
+                  value={restorePassword}
+                  onChange={(e) => setRestorePassword(e.target.value)}
+                  placeholder="Password to re-encrypt key vault"
+                  className="mt-3 w-full p-2 border border-gray-300 rounded-lg"
+                />
+                <button
+                  type="button"
+                  onClick={handleRestorePrivateKey}
+                  className="mt-3 w-full py-2 bg-green-600 text-white rounded-lg"
+                >
+                  Restore Key
+                </button>
+              </div>
+
+              <div className="rounded-lg border border-gray-200 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-xl font-bold text-gray-800">
+                    Active Sessions
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={handleRevokeOthers}
+                    className="px-3 py-2 bg-red-600 text-white rounded-lg text-sm"
+                  >
+                    Revoke Others
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {sessions.map((session) => (
+                    <div
+                      key={session._id}
+                      className="flex items-center justify-between gap-3 rounded-md bg-gray-50 p-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-semibold truncate">
+                          {session.deviceInfo}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {session.ipAddress} -{" "}
+                          {new Date(session.lastActive).toLocaleString()}
+                          {session.isCurrent ? " - Current" : ""}
+                        </p>
+                      </div>
+                      {!session.isCurrent && (
+                        <button
+                          type="button"
+                          onClick={() => handleRevokeSession(session._id)}
+                          className="px-3 py-1 bg-gray-200 rounded-md text-sm"
+                        >
+                          Revoke
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {securityStatus && (
+                <p className="text-sm text-center text-blue-700">
+                  {securityStatus}
+                </p>
+              )}
+            </div>
+          )}
+
+          {activeTab === "chat" && (
+            <div className="space-y-4">
+              {[
+                ["notificationsEnabled", "Notifications"],
+                ["readReceiptsEnabled", "Read receipts"],
+                ["encryptedFilePreviewsEnabled", "Encrypted file previews"],
+              ].map(([key, label]) => (
+                <label
+                  key={key}
+                  className="flex items-center justify-between rounded-lg border border-gray-200 p-4"
+                >
+                  <span className="font-semibold text-gray-800">{label}</span>
+                  <input
+                    type="checkbox"
+                    checked={
+                      user?.settings?.[
+                        key as keyof NonNullable<User["settings"]>
+                      ] !== false
+                    }
+                    onChange={(e) =>
+                      handleSettingToggle(
+                        key as
+                          | "notificationsEnabled"
+                          | "readReceiptsEnabled"
+                          | "encryptedFilePreviewsEnabled",
+                        e.target.checked
+                      )
+                    }
+                    className="h-5 w-5"
+                  />
+                </label>
+              ))}
+              {settingsStatus && (
+                <p className="text-sm text-center text-green-700">
+                  {settingsStatus}
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </main>
     </div>

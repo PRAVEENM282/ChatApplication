@@ -1,0 +1,14 @@
+node_modules
+npm-debug.log*
+yarn-debug.log*
+.env
+dist
+build
+.vite
+logs
+.DS_Store
+Thumbs.db
+.vscode 
+node_modules/
+**/node_modules/
+**/.vite/
