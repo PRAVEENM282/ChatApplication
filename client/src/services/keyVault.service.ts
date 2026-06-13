@@ -45,8 +45,8 @@ export async function encryptPrivateKeyToVault(
   await sodium.ready;
 
   const salt = sodium.randombytes_buf(sodium.crypto_pwhash_SALTBYTES);
-  const opslimit = sodium.crypto_pwhash_OPSLIMIT_SENSITIVE;
-  const memlimit = sodium.crypto_pwhash_MEMLIMIT_SENSITIVE;
+  const opslimit = sodium.crypto_pwhash_OPSLIMIT_INTERACTIVE;
+  const memlimit = sodium.crypto_pwhash_MEMLIMIT_INTERACTIVE;
 
   const key = sodium.crypto_pwhash(
     sodium.crypto_secretbox_KEYBYTES,

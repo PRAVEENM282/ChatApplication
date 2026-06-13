@@ -14,29 +14,8 @@ const MAX_SESSIONS = 5;
 export const register = async (req, res) => {
   const { username, email, password, publicKey, keyVault } = req.body;
 
-  if (!username || !email || !password || !publicKey) {
-    return res.status(400).json({
-      message: "Username, email, password, and public key are required",
-    });
-  }
-
   // Automatic multi-device key restore requires a server-side encrypted vault.
   // We keep it optional for backward compatibility, but new clients should always send it.
-  if (keyVault) {
-    const requiredVaultFields = [
-      "encryptedPrivateKey",
-      "nonce",
-      "salt",
-      "opslimit",
-      "memlimit",
-    ];
-    const missing = requiredVaultFields.filter((k) => !keyVault?.[k]);
-    if (missing.length) {
-      return res.status(400).json({
-        message: `Invalid keyVault payload. Missing: ${missing.join(", ")}`,
-      });
-    }
-  }
 
   try {
     // Check if username or email already exists
@@ -107,9 +86,6 @@ export const register = async (req, res) => {
  */
 export const login = async (req, res) => {
   const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ message: "Email and password are required" });
-  }
 
   try {
     // Explicitly query password and sessions since they are omitted by default

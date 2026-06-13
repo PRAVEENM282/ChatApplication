@@ -17,7 +17,7 @@ export const RegistrationForm = () => {
     setIsLoading(true);
 
     if (confirmPassword !== password) {
-      setError("password should be the same");
+      setError("Passwords do not match");
       setIsLoading(false);
       return;
     }
@@ -35,102 +35,106 @@ export const RegistrationForm = () => {
   };
 
   return (
-    <div className="w-full max-w-md mx-auto">
-      <form
-        onSubmit={handleSubmit}
-        className="bg-white shadow-2xl rounded-2xl px-10 pt-8 pb-10 space-y-6 border border-gray-100"
-      >
-        <h2 className="text-3xl font-extrabold text-center text-gray-900">
-          Create an Account
-        </h2>
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {error && (
+        <div className="bg-wa-danger/10 border border-wa-danger/30 text-wa-danger px-4 py-2.5 rounded-lg text-sm text-center">
+          {error}
+        </div>
+      )}
 
-        {error && (
-          <p className="bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded-lg text-center">
-            {error}
-          </p>
-        )}
-        <div>
-          <label
-            className="block text-gray-700 text-sm font-semibold mb-1"
-            htmlFor="username"
-          >
-            Username
-          </label>
-          <input
-            id="username"
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            required
-          />
-        </div>
-
-        <div>
-          <label
-            className="block text-gray-700 text-sm font-semibold mb-1"
-            htmlFor="email"
-          >
-            Email
-          </label>
-          <input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            required
-          />
-        </div>
-        <div>
-          <label
-            className="block text-gray-700 text-sm font-semibold mb-1"
-            htmlFor="password"
-          >
-            Password
-          </label>
-          <input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            required
-          />
-        </div>
-        <div>
-          <label
-            className="block text-gray-700 text-sm font-semibold mb-1"
-            htmlFor="ConfirmPassword"
-          >
-            Confirm Password
-          </label>
-          <input
-            id="ConfirmPassword"
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:outline-none
-          ${
-            confirmPassword && confirmPassword !== password
-              ? "border-red-500 bg-red-50 text-red-700 focus:ring-red-500"
-              : "border-gray-300 focus:ring-blue-500"
-          }
-        `}
-            required
-          />
-          {confirmPassword && confirmPassword !== password && (
-            <p className="text-red-500 text-xs mt-1">Passwords do not match.</p>
-          )}
-        </div>
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-bold rounded-lg shadow-lg transform transition-transform duration-150 hover:scale-[1.02]"
+      <div>
+        <label
+          className="block text-wa-text-secondary text-xs font-medium mb-2 uppercase tracking-wider"
+          htmlFor="username"
         >
-          {isLoading ? "Registering..." : "Register"}
-        </button>
-      </form>
-    </div>
+          Username
+        </label>
+        <input
+          id="username"
+          type="text"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          className="w-full px-4 py-2.5 bg-wa-dark border border-wa-border rounded-lg text-wa-text-primary placeholder-wa-text-secondary/50 focus:outline-none focus:border-wa-unread focus:ring-1 focus:ring-wa-unread/30 transition-smooth"
+          placeholder="Choose a username"
+          required
+        />
+      </div>
+
+      <div>
+        <label
+          className="block text-wa-text-secondary text-xs font-medium mb-2 uppercase tracking-wider"
+          htmlFor="email"
+        >
+          Email
+        </label>
+        <input
+          id="email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="w-full px-4 py-2.5 bg-wa-dark border border-wa-border rounded-lg text-wa-text-primary placeholder-wa-text-secondary/50 focus:outline-none focus:border-wa-unread focus:ring-1 focus:ring-wa-unread/30 transition-smooth"
+          placeholder="Enter your email"
+          required
+        />
+      </div>
+
+      <div>
+        <label
+          className="block text-wa-text-secondary text-xs font-medium mb-2 uppercase tracking-wider"
+          htmlFor="reg-password"
+        >
+          Password
+        </label>
+        <input
+          id="reg-password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className="w-full px-4 py-2.5 bg-wa-dark border border-wa-border rounded-lg text-wa-text-primary placeholder-wa-text-secondary/50 focus:outline-none focus:border-wa-unread focus:ring-1 focus:ring-wa-unread/30 transition-smooth"
+          placeholder="Create a password"
+          required
+        />
+      </div>
+
+      <div>
+        <label
+          className="block text-wa-text-secondary text-xs font-medium mb-2 uppercase tracking-wider"
+          htmlFor="confirm-password"
+        >
+          Confirm Password
+        </label>
+        <input
+          id="confirm-password"
+          type="password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          className={`w-full px-4 py-2.5 bg-wa-dark border rounded-lg text-wa-text-primary placeholder-wa-text-secondary/50 focus:outline-none focus:ring-1 transition-smooth
+            ${confirmPassword && confirmPassword !== password
+              ? "border-wa-danger focus:border-wa-danger focus:ring-wa-danger/30"
+              : "border-wa-border focus:border-wa-unread focus:ring-wa-unread/30"
+            }`}
+          placeholder="Confirm your password"
+          required
+        />
+        {confirmPassword && confirmPassword !== password && (
+          <p className="text-wa-danger text-xs mt-1.5">Passwords do not match</p>
+        )}
+      </div>
+
+      <button
+        type="submit"
+        disabled={isLoading}
+        className="w-full py-2.5 bg-wa-unread hover:bg-wa-unread/90 text-white font-medium rounded-lg transition-smooth disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {isLoading ? (
+          <span className="flex items-center justify-center gap-2">
+            <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            Creating Account...
+          </span>
+        ) : (
+          "Create Account"
+        )}
+      </button>
+    </form>
   );
 };

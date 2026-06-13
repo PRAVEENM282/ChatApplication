@@ -28,64 +28,63 @@ export default function LoginForm() {
   };
 
   return (
-    <div className="w-full">
-      <form
-        onSubmit={handleSubmit}
-        className="bg-white shadow-lg rounded-lg px-8 pt-6 pb-8 mb-4"
+    <form onSubmit={handleSubmit} className="space-y-5">
+      {error && (
+        <div className="bg-wa-danger/10 border border-wa-danger/30 text-wa-danger px-4 py-2.5 rounded-lg text-sm text-center">
+          {error}
+        </div>
+      )}
+
+      <div>
+        <label
+          className="block text-wa-text-secondary text-xs font-medium mb-2 uppercase tracking-wider"
+          htmlFor="login-email"
+        >
+          Email
+        </label>
+        <input
+          id="login-email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="w-full px-4 py-2.5 bg-wa-dark border border-wa-border rounded-lg text-wa-text-primary placeholder-wa-text-secondary/50 focus:outline-none focus:border-wa-unread focus:ring-1 focus:ring-wa-unread/30 transition-smooth"
+          placeholder="Enter your email"
+          required
+        />
+      </div>
+
+      <div>
+        <label
+          className="block text-wa-text-secondary text-xs font-medium mb-2 uppercase tracking-wider"
+          htmlFor="login-password"
+        >
+          Password
+        </label>
+        <input
+          id="login-password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className="w-full px-4 py-2.5 bg-wa-dark border border-wa-border rounded-lg text-wa-text-primary placeholder-wa-text-secondary/50 focus:outline-none focus:border-wa-unread focus:ring-1 focus:ring-wa-unread/30 transition-smooth"
+          placeholder="Enter your password"
+          required
+        />
+      </div>
+
+      <button
+        type="submit"
+        disabled={isLoading}
+        className="w-full py-2.5 bg-wa-unread hover:bg-wa-unread/90 text-white font-medium rounded-lg transition-smooth disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        <h2 className="text-2xl font-bold text-center text-gray-800 mb-6">
-          Login
-        </h2>
-        {error && (
-          <p className="bg-red-100 text-red-700 p-3 rounded mb-4 text-center">
-            {error}
-          </p>
+        {isLoading ? (
+          <span className="flex items-center justify-center gap-2">
+            <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            Signing In...
+          </span>
+        ) : (
+          "Sign In"
         )}
-
-        <div className="mb-4">
-          <label
-            className="block text-gray-700 text-sm font-bold mb-2"
-            htmlFor="login-email"
-          >
-            Email
-          </label>
-          <input
-            id="login-email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-            required
-          />
-        </div>
-
-        <div className="mb-6">
-          <label
-            className="block text-gray-700 text-sm font-bold mb-2"
-            htmlFor="login-password"
-          >
-            Password
-          </label>
-          <input
-            id="login-password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 mb-3 leading-tight focus:outline-none focus:shadow-outline"
-            required
-          />
-        </div>
-
-        <div className="flex items-center justify-center">
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full disabled:bg-green-300"
-          >
-            {isLoading ? "Signing In..." : "Sign In"}
-          </button>
-        </div>
-      </form>
-    </div>
+      </button>
+    </form>
   );
 }

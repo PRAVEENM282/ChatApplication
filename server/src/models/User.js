@@ -110,10 +110,6 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Indexes to speed up queries and guarantee unique constraints
-userSchema.index({ username: 1 }, { unique: true });
-userSchema.index({ email: 1 }, { unique: true });
-
 // Transform output to clean up sensitive data before sending payload to the client
 userSchema.set("toJSON", {
   transform: (_doc, ret) => {
