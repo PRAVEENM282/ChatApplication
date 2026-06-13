@@ -69,8 +69,8 @@ function getMessageUploader() {
   _messageUploader = multer({
     storage,
     fileFilter: messageFileFilter,
-    limits: { fileSize: 10 * 1024 * 1024 },
-  }).array("files", 5);
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max per chunk for data sharing
+  }).array("files", 20);
 
   return _messageUploader;
 }
@@ -84,20 +84,32 @@ function avatarFilter(req, file, cb) {
 // ✅ Message filter: allow multiple safe file types
 function messageFileFilter(req, file, cb) {
   const allowed = [
-    // ... (existing image and document types) ...
     "image/jpeg",
     "image/png",
     "image/webp",
     "image/gif",
     "application/pdf",
     "application/zip",
+    "application/x-rar-compressed",
+    "application/x-7z-compressed",
     "application/msword",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/octet-stream", // ✅ FIX: ALLOW ENCRYPTED BINARY DATA
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "text/plain",
+    "text/csv",
+    "audio/mpeg",
+    "audio/wav",
+    "audio/ogg",
+    "video/mp4",
+    "video/webm",
+    "application/octet-stream", // ✅ ALLOW ENCRYPTED BINARY DATA
   ];
 
   if (allowed.includes(file.mimetype)) cb(null, true);
-  else cb(new Error("Unsupported file type: " + file.mimetype), false); // Added mimetype to error for easier debugging
+  else cb(new Error("Unsupported file type: " + file.mimetype), false);
 }
 
 // ✅ Export lazy upload middlewares (ensures env is loaded before deciding S3 vs disk)

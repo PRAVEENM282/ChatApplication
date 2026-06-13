@@ -34,8 +34,9 @@ app.use(
   })
 );
 
-// Middleware to parse incoming JSON payloads
-app.use(express.json());
+// Middleware to parse incoming JSON payloads (50mb limit for large file metadata)
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Middleware to parse cookies (necessary for HttpOnly refresh tokens)
 app.use(cookieParser());

@@ -1,3 +1,168 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: 'Segoe UI', 'Helvetica Neue', Helvetica, 'Lucida Grande', Arial, Ubuntu, Cantarell, 'Fira Sans', sans-serif;
+    background-color: #111B21;
+    color: #E9EDEF;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Custom scrollbar - WhatsApp style */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: rgba(134, 150, 160, 0.3);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(134, 150, 160, 0.5);
+  }
+}
+
+@layer components {
+  /* WhatsApp chat wallpaper pattern */
+  .wa-chat-wallpaper {
+    background-color: #0B141A;
+    background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23182229' fill-opacity='0.6'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  }
+
+  /* Message bubble tails */
+  .wa-bubble-tail-out {
+    position: relative;
+  }
+  .wa-bubble-tail-out::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: -8px;
+    width: 0;
+    height: 0;
+    border-left: 8px solid #005C4B;
+    border-top: 0px solid transparent;
+    border-bottom: 8px solid transparent;
+  }
+
+  .wa-bubble-tail-in {
+    position: relative;
+  }
+  .wa-bubble-tail-in::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -8px;
+    width: 0;
+    height: 0;
+    border-right: 8px solid #202C33;
+    border-top: 0px solid transparent;
+    border-bottom: 8px solid transparent;
+  }
+
+  /* WhatsApp-style toggle switch */
+  .wa-toggle {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    background-color: #374045;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+  }
+  .wa-toggle.active {
+    background-color: #00A884;
+  }
+  .wa-toggle::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 20px;
+    height: 20px;
+    background: #E9EDEF;
+    border-radius: 50%;
+    transition: transform 0.2s ease;
+  }
+  .wa-toggle.active::after {
+    transform: translateX(20px);
+  }
+
+  /* Dropdown animation */
+  .wa-dropdown-enter {
+    animation: dropdownSlide 0.15s ease-out forwards;
+  }
+
+  @keyframes dropdownSlide {
+    from {
+      opacity: 0;
+      transform: scale(0.95) translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+
+  /* Skeleton loading pulse */
+  .wa-skeleton {
+    background: linear-gradient(90deg, #202C33 25%, #2A3942 50%, #202C33 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* Context menu */
+  .wa-context-menu {
+    animation: contextPop 0.12s ease-out forwards;
+  }
+
+  @keyframes contextPop {
+    from {
+      opacity: 0;
+      transform: scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* Typing indicator dots */
+  .wa-typing-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background-color: #8696A0;
+    animation: typingBounce 1.4s infinite ease-in-out both;
+  }
+  .wa-typing-dot:nth-child(1) { animation-delay: -0.32s; }
+  .wa-typing-dot:nth-child(2) { animation-delay: -0.16s; }
+
+  @keyframes typingBounce {
+    0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+    40% { transform: scale(1); opacity: 1; }
+  }
+}
+
+@layer utilities {
+  .transition-smooth {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}

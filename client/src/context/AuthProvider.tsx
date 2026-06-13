@@ -85,9 +85,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // Render a polished premium loading spinner while initializing sessions
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center space-y-4">
-        <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-        <div className="text-slate-400 font-medium tracking-wide animate-pulse">
+      <div className="min-h-screen bg-wa-dark flex flex-col items-center justify-center space-y-4">
+        <div className="w-12 h-12 border-4 border-wa-unread/30 border-t-wa-unread rounded-full animate-spin"></div>
+        <div className="text-wa-text-secondary font-medium tracking-wide animate-pulse">
           Resuming Secure Session...
         </div>
       </div>
