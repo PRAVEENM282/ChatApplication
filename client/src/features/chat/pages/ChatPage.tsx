@@ -1,12 +1,14 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { ChatRoom, Message } from "../../../types";
-import { getMyChatRooms, markChatAsRead } from "../../../services/chat.service";
+import { getMyChatRooms, markChatAsRead, deleteChatRoom } from "../../../services/chat.service";
 import { ChatList } from "../components/ChatList";
 import { ChatWindow } from "../components/ChatWindow";
 import { UserSearchModal } from "../components/UserSearchModal";
+import { DeleteChatModal } from "../components/DeleteChatModal";
 import { useSocket } from "../../../context/SocketProvider";
 import { decryptMessage } from "../../../services/crypto.service";
 import { useAuth } from "../../../context/AuthProvider";
+import { useNotifications } from "../../../hooks/useNotifications";
 
 const processRoomForPreview = async (
   room: ChatRoom,
@@ -34,7 +36,7 @@ const processRoomForPreview = async (
 
   try {
     if (type !== "text" && fileMetadata) {
-      newRoom.lastMessagePreview = `${prefix}[${type === "image" ? "Image" : "File"}: ${fileMetadata.filename}]`;
+      newRoom.lastMessagePreview = `${prefix}[${type === "image" ? "📷 Photo" : "📎 File"}: ${fileMetadata.filename}]`;
       newRoom.lastMessageTimestamp = createdAt;
       return newRoom;
     }
@@ -69,12 +71,20 @@ const processRoomForPreview = async (
 
 export const ChatPage: React.FC = () => {
   const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
+  const chatRoomsRef = useRef<ChatRoom[]>([]);
+  useEffect(() => {
+    chatRoomsRef.current = chatRooms;
+  }, [chatRooms]);
+
   const [selectedChat, setSelectedChat] = useState<ChatRoom | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
+  const [deleteTarget, setDeleteTarget] = useState<ChatRoom | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const socket = useSocket();
   const { user } = useAuth();
+  useNotifications(); // Enable browser push notifications
 
   const loadRooms = useCallback(async () => {
     if (!user) return;
@@ -104,6 +114,17 @@ export const ChatPage: React.FC = () => {
     loadRooms();
   }, [loadRooms]);
 
+  // Listen for chat_deleted events from server
+  useEffect(() => {
+    if (!socket) return;
+    const handleChatDeleted = ({ chatroomId }: { chatroomId: string }) => {
+      setChatRooms((prev) => prev.filter((r) => r._id !== chatroomId));
+      setSelectedChat((prev) => (prev?._id === chatroomId ? null : prev));
+    };
+    socket.on("chat_deleted", handleChatDeleted);
+    return () => { socket.off("chat_deleted", handleChatDeleted); };
+  }, [socket]);
+
   useEffect(() => {
     if (!socket || !user) return;
 
@@ -114,6 +135,12 @@ export const ChatPage: React.FC = () => {
       const { message } = data;
       const privateKey = localStorage.getItem("privateKey");
       if (!privateKey) return;
+
+      const roomExists = chatRoomsRef.current.some(r => r._id === message.chatroomId);
+      if (!roomExists) {
+        loadRooms();
+        return;
+      }
 
       const isActiveRoom =
         selectedChat && selectedChat._id === message.chatroomId;
@@ -132,7 +159,7 @@ export const ChatPage: React.FC = () => {
         };
 
         if (message.type !== "text") {
-          const fileType = message.type === "image" ? "Image" : "File";
+          const fileType = message.type === "image" ? "📷 Photo" : "📎 File";
           const filename = message.fileMetadata?.filename || "Encrypted File";
 
           const updatedRoom = {
@@ -208,7 +235,7 @@ export const ChatPage: React.FC = () => {
     };
   }, [socket, user, selectedChat]);
 
-  const handleOptimisticUpdate = (chatRoomId: string, message: Message) => {
+  const handleOptimisticUpdate = useCallback((chatRoomId: string, message: Message) => {
     setChatRooms((prevRooms) => {
       const roomIndex = prevRooms.findIndex((r) => r._id === chatRoomId);
       if (roomIndex === -1) return prevRooms;
@@ -218,7 +245,7 @@ export const ChatPage: React.FC = () => {
       if (message.type === "text") {
         previewText = `You: ${message.text}`;
       } else {
-        const fileType = message.type === "image" ? "Image" : "File";
+        const fileType = message.type === "image" ? "📷 Photo" : "📎 File";
         const filename = message.fileMetadata?.filename || "Encrypted File";
         previewText = `You: [${fileType}: ${filename}]`;
       }
@@ -238,9 +265,9 @@ export const ChatPage: React.FC = () => {
       );
       return newSortedRooms;
     });
-  };
+  }, []);
 
-  const handleSelectChat = (room: ChatRoom) => {
+  const handleSelectChat = useCallback((room: ChatRoom) => {
     setSelectedChat(room);
     if (!user) return;
 
@@ -269,7 +296,6 @@ export const ChatPage: React.FC = () => {
       if (roomIndex === -1) return prevRooms;
 
       const roomToUpdate = { ...prevRooms[roomIndex] };
-
       const updatedRoom = {
         ...roomToUpdate,
         unreadCount: { ...roomToUpdate.unreadCount, [user._id]: 0 },
@@ -282,10 +308,39 @@ export const ChatPage: React.FC = () => {
           new Date(a.lastMessageTimestamp || 0).getTime()
       );
     });
+  }, [user, chatRooms]);
+
+  const handleDeleteChat = useCallback((room: ChatRoom) => {
+    setDeleteTarget(room);
+  }, []);
+
+  const confirmDeleteChat = useCallback(async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    try {
+      await deleteChatRoom(deleteTarget._id);
+      setChatRooms((prev) => prev.filter((r) => r._id !== deleteTarget._id));
+      if (selectedChat?._id === deleteTarget._id) {
+        setSelectedChat(null);
+      }
+      setDeleteTarget(null);
+    } catch (err) {
+      console.error("Failed to delete chat:", err);
+      alert("Failed to delete chat. Please try again.");
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [deleteTarget, selectedChat]);
+
+  const getDeleteTargetName = () => {
+    if (!deleteTarget || !user) return "";
+    if (deleteTarget.type === "group") return deleteTarget.name || "Group chat";
+    const other = deleteTarget.participants.find((p) => p._id !== user._id);
+    return other?.username || "this chat";
   };
 
   return (
-    <div className="h-screen w-full flex overflow-hidden">
+    <div className="h-screen w-full flex overflow-hidden bg-wa-dark">
       <ChatList
         chatRooms={chatRooms}
         onSelectChat={handleSelectChat}
@@ -293,6 +348,7 @@ export const ChatPage: React.FC = () => {
         loading={loading}
         error={error}
         onNewChat={() => setIsSearchOpen(true)}
+        onDeleteChat={handleDeleteChat}
       />
       <div className="flex-1 flex flex-col h-full">
         {selectedChat ? (
@@ -300,10 +356,30 @@ export const ChatPage: React.FC = () => {
             key={selectedChat._id}
             chatRoom={selectedChat}
             onOptimisticUpdate={handleOptimisticUpdate}
+            onDeleteChat={handleDeleteChat}
           />
         ) : (
-          <div className="flex-1 flex items-center justify-center bg-gray-100">
-            <p className="text-gray-500">Select a chat to start messaging</p>
+          <div className="flex-1 flex flex-col items-center justify-center bg-wa-panel border-l border-wa-border/30">
+            <div className="text-center max-w-md px-6">
+              <div className="w-[260px] h-[260px] mx-auto mb-6 flex items-center justify-center">
+                <svg className="w-40 h-40 text-wa-text-secondary/20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="0.5">
+                  <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+              <h2 className="text-[32px] font-light text-wa-text-primary mb-3">
+                Secure Chat Web
+              </h2>
+              <p className="text-sm text-wa-text-secondary leading-relaxed mb-8">
+                Send and receive messages with end-to-end encryption.
+                Select a chat from the sidebar or start a new conversation.
+              </p>
+              <div className="flex items-center justify-center gap-2 text-wa-text-secondary/50 text-xs">
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+                </svg>
+                <span>End-to-end encrypted</span>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -311,6 +387,14 @@ export const ChatPage: React.FC = () => {
         <UserSearchModal
           onClose={() => setIsSearchOpen(false)}
           onChatCreated={loadRooms}
+        />
+      )}
+      {deleteTarget && (
+        <DeleteChatModal
+          chatName={getDeleteTargetName()}
+          onConfirm={confirmDeleteChat}
+          onCancel={() => setDeleteTarget(null)}
+          isDeleting={isDeleting}
         />
       )}
     </div>

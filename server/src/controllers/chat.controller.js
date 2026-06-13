@@ -66,6 +66,7 @@ export const createChatRoom = async (req, res) => {
         chatRoom = new ChatRoom({
           participants: participants,
           type: "one_to_one",
+          readReceiptsEnabledBy: participants,
         });
         await chatRoom.save();
         chatRoom = await chatRoom.populate(
@@ -109,8 +110,8 @@ export const createGroupChat = async (req, res) => {
   if (!name || !String(name).trim()) {
     return res.status(400).json({ message: "Group name is required" });
   }
-  if (uniqueIds.length < 3) {
-    return res.status(400).json({ message: "A group needs at least 3 members including you" });
+  if (uniqueIds.length < 2) {
+    return res.status(400).json({ message: "A group needs at least 2 members including you" });
   }
 
   try {
@@ -461,22 +462,19 @@ export const handleFileUpload = async (req, res) => {
       savedMessage
     );
 
-    // Broadcast message to active room participants
-    io.to(chatroomId).emit("receive_message", savedMessage);
-    
-    // Broadcast notification to offline or background participants
-    if (chatRoom) {
-      const recipients = chatRoom.participants.filter(
-        (p) => p.toString() !== req.userId.toString()
-      );
+    // Deliver to each recipient's personal user room — guarantees delivery
+    // even if they haven't joined the chatroom socket room (viewing different chat).
+    const recipients = chatRoom.participants.filter(
+      (p) => p.toString() !== req.userId.toString()
+    );
 
-      recipients.forEach((recipientId) => {
-        io.to(recipientId.toString()).emit("new_message_notification", {
-          chatroomId: savedMessage.chatroomId,
-          message: savedMessage,
-        });
+    recipients.forEach((recipientId) => {
+      io.to(recipientId.toString()).emit("receive_message", savedMessage);
+      io.to(recipientId.toString()).emit("new_message_notification", {
+        chatroomId: savedMessage.chatroomId,
+        message: savedMessage,
       });
-    }
+    });
 
     res.status(200).json({
       message: "File uploaded successfully.",
@@ -490,5 +488,44 @@ export const handleFileUpload = async (req, res) => {
     return res
       .status(500)
       .json({ message: "Internal server error during message saving." });
+  }
+};
+
+/**
+ * Deletes a chatroom and all its messages.
+ * Only participants of the chatroom can delete it.
+ */
+export const deleteChatRoom = async (req, res) => {
+  const { chatroomId } = req.params;
+  const userId = req.userId;
+
+  try {
+    const chatRoom = await ChatRoom.findById(chatroomId);
+    if (!chatRoom) {
+      return res.status(404).json({ message: "Chat room not found" });
+    }
+
+    if (!isRoomParticipant(chatRoom, userId)) {
+      return res.status(403).json({ message: "Access denied. You are not a participant." });
+    }
+
+    // Delete all messages in the chatroom
+    await Message.deleteMany({ chatroomId });
+
+    // Delete the chatroom itself
+    await ChatRoom.findByIdAndDelete(chatroomId);
+
+    // Notify other participants via socket
+    const io = getIo();
+    chatRoom.participants.forEach((participantId) => {
+      if (participantId.toString() !== userId.toString()) {
+        io.to(participantId.toString()).emit("chat_deleted", { chatroomId });
+      }
+    });
+
+    res.status(200).json({ message: "Chat deleted successfully." });
+  } catch (err) {
+    console.error("Error deleting chat room:", err);
+    res.status(500).json({ message: "Internal server error" });
   }
 };

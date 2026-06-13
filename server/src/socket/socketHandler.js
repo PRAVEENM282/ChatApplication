@@ -144,7 +144,12 @@ export const initializeSocketServer = (server) => {
           console.log(`Chatroom ${chatroomId} count zeroed for ${readerId} via socket.`);
         }
 
-        io.to(senderId.toString()).emit("messages_read_by_recipient", { chatroomId });
+        chatRoom.participants.forEach((p) => {
+          const participantId = p.toString();
+          if (participantId !== readerId.toString()) {
+            io.to(participantId).emit("messages_read_by_recipient", { chatroomId });
+          }
+        });
       }
     });
 
@@ -176,21 +181,22 @@ export const initializeSocketServer = (server) => {
         const savedMessage = await saveMessage(messageData);
         if (!savedMessage) return;
 
+        // Confirm to the sender (all their devices)
         io.to(socket.userId.toString()).emit("message_sent_confirmation", savedMessage);
-        socket.to(message.chatroomId).emit("receive_message", savedMessage);
 
-        if (room) {
-          const recipients = room.participants.filter(
-            (p) => p.toString() !== socket.userId.toString()
-          );
+        // Deliver to each recipient's personal user room — guarantees delivery
+        // even if they haven't joined the chatroom socket room (viewing different chat).
+        const recipients = room.participants.filter(
+          (p) => p.toString() !== socket.userId.toString()
+        );
 
-          recipients.forEach((recipientId) => {
-            io.to(recipientId.toString()).emit("new_message_notification", {
-              chatroomId: savedMessage.chatroomId,
-              message: savedMessage,
-            });
+        recipients.forEach((recipientId) => {
+          io.to(recipientId.toString()).emit("receive_message", savedMessage);
+          io.to(recipientId.toString()).emit("new_message_notification", {
+            chatroomId: savedMessage.chatroomId,
+            message: savedMessage,
           });
-        }
+        });
       } catch (err) {
         console.error("🔥 Error handling message:", err);
       }

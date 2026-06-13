@@ -21,6 +21,28 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
     if (isAuthenticated && accessToken) {
       socket.auth = { token: accessToken };
       socket.connect();
+
+      // Update token on reconnect attempts to avoid stale credentials
+      const handleReconnectAttempt = () => {
+        const currentToken = localStorage.getItem("accessToken");
+        if (currentToken) {
+          socket.auth = { token: currentToken };
+        }
+      };
+
+      // Log connection errors
+      const handleConnectError = (err: Error) => {
+        console.error("Socket connection error:", err.message);
+      };
+
+      socket.io.on("reconnect_attempt", handleReconnectAttempt);
+      socket.on("connect_error", handleConnectError);
+
+      return () => {
+        socket.io.off("reconnect_attempt", handleReconnectAttempt);
+        socket.off("connect_error", handleConnectError);
+        socket.disconnect();
+      };
     }
     
     // Clean up socket listener connection on logout/unmount

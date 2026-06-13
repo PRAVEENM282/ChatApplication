@@ -9,8 +9,9 @@ const URL = (import.meta as any).env.VITE_SOCKET_URL || window.location.origin;
  */
 export const socket = io(URL, {
   autoConnect: false, // Must be triggered manually via SocketProvider
-  transports: ["websocket"], // Disables HTTP polling fallback for higher performance
-  reconnectionAttempts: 5,
+  transports: ["websocket", "polling"], // Allow polling fallback when WS upgrade fails
+  reconnectionAttempts: Infinity, // Keep trying to reconnect
   reconnectionDelay: 1000,
+  reconnectionDelayMax: 5000,
   timeout: 20000,
 });

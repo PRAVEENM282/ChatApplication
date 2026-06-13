@@ -66,6 +66,20 @@ export const updateGroupChat = async (
   return data;
 };
 
+/**
+ * Uploads a group avatar image via S3. Only group admins can call this.
+ */
+export const uploadGroupAvatar = async (
+  chatRoomId: string,
+  formData: FormData
+): Promise<ChatRoom> => {
+  const { data } = await api.put<ChatRoom>(
+    `/api/chats/${chatRoomId}/group/avatar`,
+    formData
+  );
+  return data;
+};
+
 export const addGroupMembers = async (
   chatRoomId: string,
   participantIds: string[]
@@ -86,6 +100,13 @@ export const leaveGroupChat = async (chatRoomId: string): Promise<void> => {
  */
 export const markChatAsRead = async (chatRoomId: string): Promise<void> => {
   await api.put(`/api/chats/${chatRoomId}/read`);
+};
+
+/**
+ * Deletes a chatroom and all its messages permanently.
+ */
+export const deleteChatRoom = async (chatRoomId: string): Promise<void> => {
+  await api.delete(`/api/chats/${chatRoomId}`);
 };
 
 /**

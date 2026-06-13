@@ -7,13 +7,14 @@ import {
   encryptMessageForParticipants,
 } from "../../../services/crypto.service";
 import { sendEncryptedFile } from "../../../services/chat.service";
-import { Paperclip, X } from "lucide-react";
 
 interface MessageInputProps {
   chatRoom: ChatRoom;
   onNewMessage: (msg: Message) => void;
   onOptimisticUpdate: (chatroomId: string, message: Message) => void;
 }
+
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
 export const MessageInput: React.FC<MessageInputProps> = ({
   chatRoom,
@@ -23,10 +24,12 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [isSending, setIsSending] = useState(false);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
 
   const socket = useSocket();
   const { user } = useAuth();
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const handleTyping = () => {
     if (!socket) return;
@@ -43,7 +46,26 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     typingTimeoutRef.current = setTimeout(() => {
       socket.emit("stop_typing", { chatroomId: chatRoom._id });
       typingTimeoutRef.current = null;
-    }, 200);
+    }, 2000);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    if (!selectedFile) return;
+
+    if (selectedFile.size > MAX_FILE_SIZE) {
+      alert(`File too large. Maximum size is ${MAX_FILE_SIZE / 1024 / 1024}MB.`);
+      return;
+    }
+
+    setFile(selectedFile);
+    setText("");
+    setShowAttachMenu(false);
+  };
+
+  const fileSizeFormatted = (size: number) => {
+    if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`;
+    return `${(size / 1024).toFixed(0)} KB`;
   };
 
   const handleFileSend = async (file: File) => {
@@ -217,66 +239,140 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     }
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e as any);
+    }
+  };
+
   return (
-    <div className="p-4 bg-gray-100 border-t border-gray-300">
-      <form onSubmit={handleSubmit} className="flex flex-col space-y-2">
-        <input
-          type="file"
-          id="file-upload"
-          onChange={(e) => {
-            setFile(e.target.files?.[0] || null);
-            if (e.target.files?.[0]) setText("");
-          }}
-          className="hidden"
-        />
-        {file && (
-          <div className="flex items-center justify-between p-2 text-sm bg-blue-100 border border-blue-300 rounded-md shadow-sm">
-            <span className="truncate pr-4 text-gray-700">
-              {file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)
-            </span>
-            <button
-              type="button"
-              onClick={() => setFile(null)}
-              className="text-blue-500 hover:text-red-500 transition-colors p-1"
-              title="Remove attachment"
-            >
-              <X size={16} />
-            </button>
+    <div className="bg-wa-header border-t border-wa-border/30 px-4 py-2.5 flex-shrink-0">
+      {/* File preview bar */}
+      {file && (
+        <div className="flex items-center gap-3 mb-2 p-2.5 bg-wa-dark rounded-lg">
+          <div className="w-8 h-8 rounded-md bg-wa-teal/20 flex items-center justify-center flex-shrink-0">
+            {file.type.startsWith("image/") ? (
+              <svg className="w-4 h-4 text-wa-unread" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <path d="M21 15l-5-5L5 21" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4 text-wa-unread" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                <path d="M14 2v6h6" />
+              </svg>
+            )}
           </div>
-        )}
-        <div className="flex items-stretch">
-          <label
-            htmlFor="file-upload"
-            className="flex items-center justify-center p-3 text-gray-500 border border-gray-300 rounded-l-md cursor-pointer bg-white hover:bg-gray-100 transition-colors"
-            title="Attach File"
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-wa-text-primary truncate">{file.name}</p>
+            <p className="text-xs text-wa-text-secondary">{fileSizeFormatted(file.size)}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFile(null)}
+            className="text-wa-text-secondary hover:text-wa-text-primary p-1 transition-smooth"
           >
-            <Paperclip size={20} />
-          </label>
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="flex items-end gap-2">
+        {/* Attachment button */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowAttachMenu(!showAttachMenu)}
+            className="w-10 h-10 flex items-center justify-center text-wa-icon hover:text-wa-text-primary transition-smooth rounded-full"
+          >
+            <svg className={`w-6 h-6 transition-transform duration-200 ${showAttachMenu ? 'rotate-45' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" strokeLinecap="round" />
+            </svg>
+          </button>
+
+          {/* Attachment menu popup */}
+          {showAttachMenu && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setShowAttachMenu(false)} />
+              <div className="absolute bottom-12 left-0 z-40 wa-dropdown-enter">
+                <div className="bg-wa-header border border-wa-border rounded-xl shadow-2xl overflow-hidden min-w-[180px]">
+                  <label className="flex items-center gap-3 px-4 py-3 hover:bg-wa-sidebar-hover cursor-pointer transition-smooth">
+                    <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center">
+                      <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                        <path d="M14 2v6h6" />
+                      </svg>
+                    </div>
+                    <span className="text-wa-text-primary text-sm">Document</span>
+                    <input
+                      type="file"
+                      className="hidden"
+                      onChange={handleFileSelect}
+                    />
+                  </label>
+                  <label className="flex items-center gap-3 px-4 py-3 hover:bg-wa-sidebar-hover cursor-pointer transition-smooth">
+                    <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center">
+                      <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                        <circle cx="8.5" cy="8.5" r="1.5" />
+                        <path d="M21 15l-5-5L5 21" />
+                      </svg>
+                    </div>
+                    <span className="text-wa-text-primary text-sm">Photos & Videos</span>
+                    <input
+                      type="file"
+                      accept="image/*,video/*"
+                      className="hidden"
+                      onChange={handleFileSelect}
+                    />
+                  </label>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Text input */}
+        <div className="flex-1">
           <input
+            ref={inputRef}
             type="text"
             value={text}
             onChange={(e) => {
               setText(e.target.value);
               handleTyping();
             }}
+            onKeyDown={handleKeyDown}
             disabled={isSending || !!file}
-            className="flex-1 p-2 border border-y-gray-300 border-x-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-200 disabled:cursor-not-allowed"
+            className="w-full px-4 py-2.5 bg-wa-input-bg border-none rounded-lg text-wa-text-primary text-sm placeholder-wa-text-secondary/60 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
             placeholder={
               isSending
                 ? "Sending..."
                 : file
-                  ? `Ready to send ${file.name}...`
-                  : "Type a message..."
+                  ? `Ready to send ${file.name}`
+                  : "Type a message"
             }
           />
-          <button
-            type="submit"
-            disabled={isSending || (!text.trim() && !file)}
-            className="bg-blue-500 text-white px-4 py-2 rounded-r-md hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
-          >
-            {isSending ? "..." : "Send"}
-          </button>
         </div>
+
+        {/* Send button */}
+        <button
+          type="submit"
+          disabled={isSending || (!text.trim() && !file)}
+          className="w-10 h-10 flex items-center justify-center bg-wa-unread hover:bg-wa-unread/90 text-white rounded-full transition-smooth disabled:opacity-30 disabled:cursor-not-allowed flex-shrink-0"
+        >
+          {isSending ? (
+            <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+          ) : (
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+            </svg>
+          )}
+        </button>
       </form>
     </div>
   );

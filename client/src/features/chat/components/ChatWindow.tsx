@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { ChatRoom, Message as MessageType } from "../../../types";
 import { useSocket } from "../../../context/SocketProvider";
 import { useAuth } from "../../../context/AuthProvider";
@@ -9,46 +9,96 @@ import { MessageInput } from "./MessageInput";
 import {
   getChatMessages,
   updateChatPreferences,
+  updateGroupChat,
+  uploadGroupAvatar,
 } from "../../../services/chat.service";
 import { decryptSymmetricKey } from "../../../services/crypto.service";
 
 interface ChatWindowProps {
   chatRoom: ChatRoom;
   onOptimisticUpdate: (chatroomId: string, message: MessageType) => void;
+  onDeleteChat?: (room: ChatRoom) => void;
+  onBack?: () => void;
 }
 
 const DEFAULT_FALLBACK_AVATAR =
   "https://api.dicebear.com/8.x/adventurer/svg?seed=User";
 
-export const ChatWindow: React.FC<ChatWindowProps> = ({
+const getBetterStatus = (
+  statusA: string | undefined,
+  statusB: string | undefined
+): "sending" | "sent" | "delivered" | "read" | "failed" => {
+  const ranks: Record<string, number> = {
+    failed: -1,
+    sending: 0,
+    sent: 1,
+    delivered: 2,
+    read: 3,
+  };
+  const rankA = ranks[statusA || "sent"] !== undefined ? ranks[statusA || "sent"] : 1;
+  const rankB = ranks[statusB || "sent"] !== undefined ? ranks[statusB || "sent"] : 1;
+  return rankA >= rankB ? (statusA as any || "sent") : (statusB as any || "sent");
+};
+
+const ChatWindowComponent: React.FC<ChatWindowProps> = ({
   chatRoom,
   onOptimisticUpdate,
+  onDeleteChat,
+  onBack,
 }) => {
   const [messages, setMessages] = useState<MessageType[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [decryptedFileKeys, setDecryptedFileKeys] = useState<
     Map<string, Uint8Array>
   >(new Map());
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
   const socket = useSocket();
   const { user } = useAuth();
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const { onlineUsers } = usePresence();
-  const [roomPreferences, setRoomPreferences] = useState({
-    muted: chatRoom.mutedBy?.includes(user?._id || "") || false,
-    archived: chatRoom.archivedBy?.includes(user?._id || "") || false,
-    readReceipts:
-      chatRoom.readReceiptsEnabledBy?.includes(user?._id || "") !== false,
+  const [roomPreferences, setRoomPreferences] = useState(() => {
+    const rreList = chatRoom.readReceiptsEnabledBy;
+    const readReceipts =
+      !rreList || rreList.length === 0
+        ? true
+        : rreList.includes(user?._id || "");
+    return {
+      muted: chatRoom.mutedBy?.includes(user?._id || "") || false,
+      archived: chatRoom.archivedBy?.includes(user?._id || "") || false,
+      readReceipts,
+    };
   });
 
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const pendingStatusUpdates = useRef<Map<string, "delivered" | "read" | "sending" | "sent" | "failed">>(new Map());
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!showMenu) return;
+    const close = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [showMenu]);
+
   useEffect(() => {
     setMessages([]);
     setDecryptedFileKeys(new Map());
+    pendingStatusUpdates.current.clear();
+    const rreList = chatRoom.readReceiptsEnabledBy;
+    const readReceipts =
+      !rreList || rreList.length === 0
+        ? true
+        : rreList.includes(user?._id || "");
     setRoomPreferences({
       muted: chatRoom.mutedBy?.includes(user?._id || "") || false,
       archived: chatRoom.archivedBy?.includes(user?._id || "") || false,
-      readReceipts:
-        chatRoom.readReceiptsEnabledBy?.includes(user?._id || "") !== false,
+      readReceipts,
     });
   }, [
     chatRoom._id,
@@ -66,9 +116,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
       if (msg.type === "text") return;
 
       const rawPrivateKey = localStorage.getItem("privateKey");
-      if (!rawPrivateKey) {
-        return;
-      }
+      if (!rawPrivateKey) return;
 
       const encryptedKeyBase64 =
         msg.fileMetadata.encryptedFileKeys?.[user?._id || ""] ||
@@ -79,16 +127,11 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
       const keyNonceBase64 = msg.fileMetadata.keyNonce;
 
       try {
-        const trimmedEncryptedKeyBase64 = String(encryptedKeyBase64).trim();
-        const trimmedKeyNonceBase64 = String(keyNonceBase64).trim();
-        const trimmedSenderPublicKey = String(msg.sender.publicKey).trim();
-        const trimmedMyPrivateKey = String(rawPrivateKey).trim();
-
         const symmetricKey = await decryptSymmetricKey(
-          trimmedEncryptedKeyBase64,
-          trimmedKeyNonceBase64,
-          trimmedSenderPublicKey,
-          trimmedMyPrivateKey
+          String(encryptedKeyBase64).trim(),
+          String(keyNonceBase64).trim(),
+          String(msg.sender.publicKey).trim(),
+          String(rawPrivateKey).trim()
         );
 
         setDecryptedFileKeys((prev) => {
@@ -117,6 +160,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     },
     [user?._id]
   );
+
   useEffect(() => {
     const fetchHistoricalMessages = async () => {
       if (!chatRoom._id || !user) return;
@@ -124,7 +168,6 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
       setIsLoadingMessages(true);
       try {
         const historicalMessages = await getChatMessages(chatRoom._id);
-
         const decryptedMessages: MessageType[] = [];
 
         for (const msg of historicalMessages) {
@@ -136,11 +179,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
               const myPrivateKey = localStorage.getItem("privateKey");
               if (myPrivateKey) {
                 const encryptedText = getEncryptedTextForCurrentUser(msg);
-
                 if (encryptedText && typeof encryptedText === "string") {
-                  const { ciphertextBase64, nonceBase64 } =
-                    JSON.parse(encryptedText);
-
+                  const { ciphertextBase64, nonceBase64 } = JSON.parse(encryptedText);
                   decryptedText = await decryptMessage(
                     ciphertextBase64.trim(),
                     nonceBase64.trim(),
@@ -152,16 +192,13 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                   status = "sent";
                 }
               }
-            }
-            else if (msg.type === "file" || msg.type === "image") {
+            } else if (msg.type === "file" || msg.type === "image") {
               const key = await handleKeyDecryption(msg, true);
               if (!key) {
-                decryptedText =
-                  msg.fileMetadata?.filename ?? "[Encrypted File Key Invalid]";
+                decryptedText = msg.fileMetadata?.filename ?? "[Encrypted File Key Invalid]";
                 status = "sent";
               } else {
-                decryptedText =
-                  msg.fileMetadata?.filename ?? "[Missing filename]";
+                decryptedText = msg.fileMetadata?.filename ?? "[Missing filename]";
               }
             }
 
@@ -209,7 +246,6 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     if (chatRoom._id && socket) {
       socket.emit("join_room", chatRoom._id);
     }
-
     return () => {
       if (chatRoom._id && socket) {
         socket.emit("leave_room", chatRoom._id);
@@ -217,13 +253,11 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     };
   }, [chatRoom._id, socket]);
 
-
   useEffect(() => {
     if (!socket || !user) return;
     const handleReceiveMessage = async (savedMessage: any) => {
-      if (savedMessage.sender._id === user?._id) {
-        return;
-      }
+      if (savedMessage.chatroomId !== chatRoom._id) return;
+      if (savedMessage.sender._id === user?._id) return;
 
       let plaintext = "";
       let status = savedMessage.status || "sent";
@@ -232,11 +266,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
         try {
           const myPrivateKey = localStorage.getItem("privateKey");
           if (!myPrivateKey) return;
-
           const encryptedText = getEncryptedTextForCurrentUser(savedMessage);
           if (!encryptedText) throw new Error("Missing encrypted payload");
           const { ciphertextBase64, nonceBase64 } = JSON.parse(encryptedText);
-
           plaintext = await decryptMessage(
             ciphertextBase64,
             nonceBase64,
@@ -246,13 +278,10 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
         } catch (e) {
           plaintext = "[Decryption Failed]";
         }
-      }
-      else if (savedMessage.type === "file" || savedMessage.type === "image") {
+      } else if (savedMessage.type === "file" || savedMessage.type === "image") {
         const key = await handleKeyDecryption(savedMessage, false);
         plaintext = savedMessage.fileMetadata.filename;
-        if (!key) {
-          status = "sent";
-        }
+        if (!key) status = "sent";
       }
 
       const newMessage: MessageType = {
@@ -270,12 +299,16 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
       };
 
       setMessages((prev) => {
-        if (prev.some((msg) => msg._id === newMessage._id)) {
-          return prev;
-        }
+        if (prev.some((msg) => msg._id === newMessage._id)) return prev;
         return [...prev, newMessage];
       });
+
+      socket.emit("message_delivered", {
+        messageId: savedMessage._id,
+        senderId: savedMessage.sender._id,
+      });
     };
+
     const handleSentConfirmation = async (serverMessage: MessageType) => {
       if (serverMessage.type !== "text" && serverMessage.fileMetadata) {
         await handleKeyDecryption(serverMessage, false);
@@ -286,11 +319,18 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
           (msg) => msg._id.startsWith("temp-") && msg.sender._id === user?._id
         );
         const finalMsgExists = prev.some((msg) => msg._id === finalServerId);
+        const pendingStatus = pendingStatusUpdates.current.get(finalServerId);
+        if (pendingStatus) pendingStatusUpdates.current.delete(finalServerId);
+
+        const existingMsg = tempMsgIndex !== -1 ? prev[tempMsgIndex] : prev.find((m) => m._id === finalServerId);
+        const currentStatus = existingMsg ? existingMsg.status : undefined;
+        const resolvedStatus = getBetterStatus(
+          getBetterStatus(currentStatus, pendingStatus),
+          serverMessage.status
+        );
 
         if (finalMsgExists) {
-          if (tempMsgIndex !== -1) {
-            return prev.filter((_, index) => index !== tempMsgIndex);
-          }
+          if (tempMsgIndex !== -1) return prev.filter((_, index) => index !== tempMsgIndex);
           return prev;
         }
         if (tempMsgIndex !== -1) {
@@ -299,17 +339,16 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
           newMessages[tempMsgIndex] = {
             ...serverMessage,
             text: serverMessage.text || originalText,
-            status: "sent",
+            status: resolvedStatus,
           };
           return newMessages;
         }
-        return [...prev, { ...serverMessage, status: "sent" }];
+        return [...prev, { ...serverMessage, status: resolvedStatus }];
       });
     };
 
     socket.on("receive_message", handleReceiveMessage);
     socket.on("message_sent_confirmation", handleSentConfirmation);
-
     return () => {
       socket.off("receive_message", handleReceiveMessage);
       socket.off("message_sent_confirmation", handleSentConfirmation);
@@ -322,34 +361,25 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
 
   useEffect(() => {
     if (!socket) return;
-
     const handleUserTyping = (data: { userId: string; chatroomId: string }) => {
       if (data.chatroomId === chatRoom._id) {
         setTypingUsers((prev) => [...new Set([...prev, data.userId])]);
       }
     };
-
-    const handleUserStoppedTyping = (data: {
-      userId: string;
-      chatroomId: string;
-    }) => {
+    const handleUserStoppedTyping = (data: { userId: string; chatroomId: string }) => {
       if (data.chatroomId === chatRoom._id) {
         setTypingUsers((prev) => prev.filter((id) => id !== data.userId));
       }
     };
-
     socket.on("user_typing", handleUserTyping);
     socket.on("user_stopped_typing", handleUserStoppedTyping);
-
     return () => {
       socket.off("user_typing", handleUserTyping);
       socket.off("user_stopped_typing", handleUserStoppedTyping);
     };
   }, [socket, chatRoom._id]);
 
-  const otherParticipant = chatRoom.participants.find(
-    (p) => p._id !== user?._id
-  );
+  const otherParticipant = chatRoom.participants.find((p) => p._id !== user?._id);
   const chatTitle =
     chatRoom.type === "group"
       ? chatRoom.name || "Group chat"
@@ -358,35 +388,16 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     chatRoom.type === "group"
       ? chatRoom.avatarUrl || DEFAULT_FALLBACK_AVATAR
       : otherParticipant?.avatarUrl;
-  const isOnline = otherParticipant
-    ? onlineUsers.has(otherParticipant._id)
-    : false;
+  const isOnline = otherParticipant ? onlineUsers.has(otherParticipant._id) : false;
 
-  const typingIndicatorText = () => {
-    const typingParticipant = chatRoom.participants.find(
-      (p) => p._id === typingUsers[0]
-    );
-    if (typingParticipant) {
-      return `•••`;
-    }
-    return null;
-  };
-
-  const handleNewMessage = (msg: MessageType) => {
-    if (
-      msg.sender._id === user?._id &&
-      msg.type !== "text" &&
-      msg.fileMetadata
-    ) {
+  const handleNewMessage = useCallback((msg: MessageType) => {
+    if (msg.sender._id === user?._id && msg.type !== "text" && msg.fileMetadata) {
       handleKeyDecryption(msg, false);
     }
-
     setMessages((prev) => [...prev, msg]);
-  };
+  }, [user, handleKeyDecryption]);
 
-  const toggleRoomPreference = async (
-    key: "muted" | "archived" | "readReceipts"
-  ) => {
+  const toggleRoomPreference = useCallback(async (key: "muted" | "archived" | "readReceipts") => {
     const prev = roomPreferences;
     const next = { ...prev, [key]: !prev[key] };
     setRoomPreferences(next);
@@ -395,12 +406,11 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     } catch {
       setRoomPreferences(prev);
     }
-  };
+  }, [roomPreferences, chatRoom._id]);
 
+  // Delivery status listener
   useEffect(() => {
     if (!socket || !user) return;
-    if (!roomPreferences.readReceipts || user.settings?.readReceiptsEnabled === false) return;
-
     const handleStatusUpdate = ({
       messageId,
       status,
@@ -408,11 +418,27 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
       messageId: string;
       status: "delivered" | "read";
     }) => {
-      setMessages((prev) =>
-        prev.map((msg) => (msg._id === messageId ? { ...msg, status } : msg))
-      );
+      setMessages((prev) => {
+        const exists = prev.some((msg) => msg._id === messageId);
+        if (!exists) {
+          pendingStatusUpdates.current.set(messageId, status);
+          return prev;
+        }
+        return prev.map((msg) =>
+          msg._id === messageId
+            ? { ...msg, status: getBetterStatus(msg.status, status) }
+            : msg
+        );
+      });
     };
+    socket.on("message_status_updated", handleStatusUpdate);
+    return () => { socket.off("message_status_updated", handleStatusUpdate); };
+  }, [socket, user, chatRoom._id]);
 
+  // Read receipt listener
+  useEffect(() => {
+    if (!socket || !user) return;
+    if (!roomPreferences.readReceipts || user.settings?.readReceiptsEnabled === false) return;
     const handleMessagesRead = ({ chatroomId }: { chatroomId: string }) => {
       if (chatroomId === chatRoom._id) {
         setMessages((prev) =>
@@ -422,115 +448,248 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
         );
       }
     };
-
-    socket.on("message_status_updated", handleStatusUpdate);
     socket.on("messages_read_by_recipient", handleMessagesRead);
-
-    return () => {
-      socket.off("message_status_updated", handleStatusUpdate);
-      socket.off("messages_read_by_recipient", handleMessagesRead);
-    };
+    return () => { socket.off("messages_read_by_recipient", handleMessagesRead); };
   }, [socket, user, chatRoom._id, roomPreferences.readReceipts]);
+
+  const deliveredMsgIds = useRef<Set<string>>(new Set());
+  const lastReadMsgId = useRef<string | null>(null);
+
   useEffect(() => {
-    if (!socket || !user) return;
-    messages.forEach((msg) => {
-      if (
+    deliveredMsgIds.current = new Set();
+    lastReadMsgId.current = null;
+  }, [chatRoom._id]);
+
+  useEffect(() => {
+    if (!socket || !user || messages.length === 0) return;
+    const undelivered = messages.filter(
+      (msg) =>
         msg.sender._id !== user._id &&
         msg.status !== "delivered" &&
-        msg.status !== "read"
-      ) {
+        msg.status !== "read" &&
+        !msg._id.startsWith("temp-") &&
+        !deliveredMsgIds.current.has(msg._id)
+    );
+    if (undelivered.length > 0) {
+      undelivered.forEach((msg) => {
         socket.emit("message_delivered", {
           messageId: msg._id,
           senderId: msg.sender._id,
         });
-        setMessages((prev) =>
-          prev.map((m) =>
-            m._id === msg._id ? { ...m, status: "delivered" } : m
-          )
-        );
-      }
-    });
-    const otherParticipant = chatRoom.participants.find(
-      (p) => p._id !== user._id
-    );
-    if (otherParticipant) {
-      const unreadMessagesExist = messages.some(
-        (m) => m.sender._id !== user._id && m.status !== "read"
+        deliveredMsgIds.current.add(msg._id);
+      });
+      setMessages((prev) =>
+        prev.map((m) =>
+          undelivered.some((u) => u._id === m._id)
+            ? { ...m, status: "delivered" }
+            : m
+        )
       );
-      if (unreadMessagesExist) {
+    }
+    const incomingMessages = messages.filter(
+      (m) => m.sender._id !== user._id && !m._id.startsWith("temp-")
+    );
+    if (incomingMessages.length > 0) {
+      const lastIncomingMsg = incomingMessages[incomingMessages.length - 1];
+      if (
+        lastIncomingMsg.status !== "read" &&
+        lastReadMsgId.current !== lastIncomingMsg._id
+      ) {
         socket.emit("messages_read", {
           chatroomId: chatRoom._id,
           readerId: user._id,
         });
+        lastReadMsgId.current = lastIncomingMsg._id;
       }
     }
-  }, [messages, socket, user, chatRoom.participants, chatRoom._id, roomPreferences.readReceipts]);
+  }, [messages, socket, user, chatRoom._id]);
+
+  // Compute which messages should show a tail (first message or different sender from previous)
+  const messagesWithTails = useMemo(() => {
+    return messages.map((msg, idx) => {
+      const prev = idx > 0 ? messages[idx - 1] : null;
+      const showTail = !prev || prev.sender._id !== msg.sender._id;
+      return { ...msg, showTail };
+    });
+  }, [messages]);
 
   return (
-    <div className="flex-1 flex flex-col h-full">
-      
-      <div className="p-4 border-b border-gray-300 bg-gray-100 flex items-center gap-4 flex-shrink-0">
-        <img
-          src={chatAvatar}
-          alt="user avatar"
-          className="w-12 h-12 rounded-full object-cover"
-          onError={(e) => {
-            e.currentTarget.src = DEFAULT_FALLBACK_AVATAR;
-          }}
-        />
-        <div>
-          <h2 className="text-xl font-bold">
+    <div className="flex-1 flex flex-col h-full bg-wa-chat-bg">
+      {/* Header */}
+      <div className="px-4 py-[10px] bg-wa-header flex items-center gap-3 flex-shrink-0 border-l border-wa-border/30">
+        {/* Back button (mobile) */}
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="w-8 h-8 flex items-center justify-center text-wa-icon hover:text-wa-text-primary transition-smooth md:hidden"
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M19 12H5M12 19l-7-7 7-7" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        )}
+
+        {/* Avatar */}
+        <div className="relative group">
+          <img
+            src={chatAvatar}
+            alt="user avatar"
+            className="w-10 h-10 rounded-full object-cover"
+            onError={(e) => {
+              e.currentTarget.src = DEFAULT_FALLBACK_AVATAR;
+            }}
+          />
+          {chatRoom.type !== "group" && isOnline && (
+            <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-wa-unread rounded-full border-[1.5px] border-wa-header" />
+          )}
+          {chatRoom.type === "group" && chatRoom.admins?.includes(user?._id || "") && (
+            <>
+              <input
+                type="file"
+                id="group-avatar-upload"
+                accept="image/*"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  try {
+                    const formData = new FormData();
+                    formData.append("avatar", file);
+                    await uploadGroupAvatar(chatRoom._id, formData);
+                  } catch (err) {
+                    console.error("Failed to update group avatar", err);
+                  }
+                }}
+              />
+              <label
+                htmlFor="group-avatar-upload"
+                className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 rounded-full cursor-pointer transition-smooth"
+              >
+                <span className="text-white text-xs opacity-0 group-hover:opacity-100 transition-smooth">📷</span>
+              </label>
+            </>
+          )}
+        </div>
+
+        {/* Title & Status */}
+        <div className="flex-1 min-w-0">
+          <h2 className="text-base font-normal text-wa-text-primary truncate">
             {chatTitle}
           </h2>
           {chatRoom.type === "group" ? (
-            <p className="text-xs text-gray-500">
-              {chatRoom.participants.length} members
+            <p className="text-xs text-wa-text-secondary truncate">
+              {chatRoom.participants.map(p => p.username).join(", ")}
             </p>
-          ) : (
-            isOnline && <p className="text-xs text-green-600">Online</p>
+          ) : typingUsers.length > 0 ? (
+            <p className="text-xs text-wa-unread">typing...</p>
+          ) : isOnline ? (
+            <p className="text-xs text-wa-text-secondary">online</p>
+          ) : null}
+        </div>
+
+        {/* Menu button */}
+        <div className="relative" ref={menuRef}>
+          <button
+            type="button"
+            onClick={() => setShowMenu(!showMenu)}
+            className="w-10 h-10 flex items-center justify-center text-wa-icon hover:text-wa-text-primary rounded-full hover:bg-wa-sidebar-hover transition-smooth"
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="12" cy="5" r="1.5" />
+              <circle cx="12" cy="12" r="1.5" />
+              <circle cx="12" cy="19" r="1.5" />
+            </svg>
+          </button>
+
+          {showMenu && (
+            <div className="absolute right-0 top-full mt-1 z-50 wa-dropdown-enter">
+              <div className="bg-wa-header border border-wa-border rounded-lg shadow-2xl overflow-hidden min-w-[200px] py-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    toggleRoomPreference("muted");
+                    setShowMenu(false);
+                  }}
+                  className="w-full text-left px-6 py-2.5 text-sm text-wa-text-primary hover:bg-wa-sidebar-hover transition-smooth"
+                >
+                  {roomPreferences.muted ? "Unmute notifications" : "Mute notifications"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    toggleRoomPreference("archived");
+                    setShowMenu(false);
+                  }}
+                  className="w-full text-left px-6 py-2.5 text-sm text-wa-text-primary hover:bg-wa-sidebar-hover transition-smooth"
+                >
+                  {roomPreferences.archived ? "Unarchive chat" : "Archive chat"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    toggleRoomPreference("readReceipts");
+                    setShowMenu(false);
+                  }}
+                  className="w-full text-left px-6 py-2.5 text-sm text-wa-text-primary hover:bg-wa-sidebar-hover transition-smooth"
+                >
+                  {roomPreferences.readReceipts ? "Disable read receipts" : "Enable read receipts"}
+                </button>
+                {onDeleteChat && (
+                  <>
+                    <div className="border-t border-wa-border/50 my-1" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMenu(false);
+                        onDeleteChat(chatRoom);
+                      }}
+                      className="w-full text-left px-6 py-2.5 text-sm text-wa-danger hover:bg-wa-sidebar-hover transition-smooth"
+                    >
+                      Delete chat
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
           )}
         </div>
-        <div className="ml-auto flex gap-2">
-          <button
-            type="button"
-            onClick={() => toggleRoomPreference("muted")}
-            className="px-3 py-1 rounded-md bg-white border border-gray-300 text-xs"
-          >
-            {roomPreferences.muted ? "Unmute" : "Mute"}
-          </button>
-          <button
-            type="button"
-            onClick={() => toggleRoomPreference("archived")}
-            className="px-3 py-1 rounded-md bg-white border border-gray-300 text-xs"
-          >
-            {roomPreferences.archived ? "Unarchive" : "Archive"}
-          </button>
-        </div>
       </div>
-      <div className="flex-1 overflow-y-auto bg-gray-200 min-h-0">
-        <div className="p-4">
+
+      {/* Messages area */}
+      <div className="flex-1 overflow-y-auto wa-chat-wallpaper min-h-0">
+        <div className="py-2">
           {isLoadingMessages ? (
-            <div className="flex items-center justify-center h-full text-gray-500">
-              Loading messages...
+            <div className="flex flex-col items-center justify-center h-full py-20">
+              <div className="w-8 h-8 border-3 border-wa-text-secondary/20 border-t-wa-unread rounded-full animate-spin" />
+              <p className="text-wa-text-secondary text-sm mt-3">Loading messages...</p>
             </div>
           ) : messages.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-gray-500">
-              No messages yet. Start the conversation!
+            <div className="flex flex-col items-center justify-center h-full py-20">
+              <div className="bg-wa-bubble-in/80 rounded-lg px-4 py-2 text-center">
+                <p className="text-wa-text-secondary text-xs">
+                  🔒 Messages are end-to-end encrypted. No one outside of this chat can read them.
+                </p>
+              </div>
             </div>
           ) : (
-            messages.map((msg) => (
+            messagesWithTails.map((msg) => (
               <Message
                 key={msg._id}
                 message={msg}
                 decryptedFileKey={decryptedFileKeys.get(msg._id)}
+                showTail={msg.showTail}
               />
             ))
           )}
           
           {typingUsers.length > 0 && (
-            <div className="flex justify-start mb-3">
-              <div className="bg-gray-100 text-gray-500 px-4 py-2 rounded-xl rounded-bl-none animate-pulse">
-                {typingIndicatorText()}
+            <div className="flex justify-start px-[6%] mb-2">
+              <div className="bg-wa-bubble-in px-4 py-3 rounded-lg rounded-tl-none wa-bubble-tail-in">
+                <div className="flex gap-1">
+                  <span className="wa-typing-dot" />
+                  <span className="wa-typing-dot" />
+                  <span className="wa-typing-dot" />
+                </div>
               </div>
             </div>
           )}
@@ -538,13 +697,13 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
         </div>
       </div>
      
-      <div className="flex-shrink-0">
-        <MessageInput
-          chatRoom={chatRoom}
-          onNewMessage={handleNewMessage}
-          onOptimisticUpdate={onOptimisticUpdate}
-        />
-      </div>
+      <MessageInput
+        chatRoom={chatRoom}
+        onNewMessage={handleNewMessage}
+        onOptimisticUpdate={onOptimisticUpdate}
+      />
     </div>
   );
 };
+
+export const ChatWindow = React.memo(ChatWindowComponent);
