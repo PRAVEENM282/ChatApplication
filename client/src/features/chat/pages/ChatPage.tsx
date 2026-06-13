@@ -114,16 +114,45 @@ export const ChatPage: React.FC = () => {
     loadRooms();
   }, [loadRooms]);
 
-  // Listen for chat_deleted events from server
+  // Listen for chat_deleted and group_updated events from server
   useEffect(() => {
-    if (!socket) return;
+    if (!socket || !user) return;
     const handleChatDeleted = ({ chatroomId }: { chatroomId: string }) => {
       setChatRooms((prev) => prev.filter((r) => r._id !== chatroomId));
       setSelectedChat((prev) => (prev?._id === chatroomId ? null : prev));
     };
+    const handleGroupUpdated = (updatedRoom: Partial<ChatRoom> & { _id: string }) => {
+      setChatRooms((prev) => prev.map((r) => 
+        r._id === updatedRoom._id 
+          ? { 
+              ...r, 
+              ...updatedRoom, 
+              lastMessage: r.lastMessage, 
+              lastMessagePreview: r.lastMessagePreview, 
+              lastMessageTimestamp: r.lastMessageTimestamp 
+            } 
+          : r
+      ));
+      setSelectedChat((prev) => 
+        prev?._id === updatedRoom._id 
+          ? { 
+              ...prev, 
+              ...updatedRoom, 
+              lastMessage: prev.lastMessage, 
+              lastMessagePreview: prev.lastMessagePreview, 
+              lastMessageTimestamp: prev.lastMessageTimestamp 
+            } 
+          : prev
+      );
+    };
+
     socket.on("chat_deleted", handleChatDeleted);
-    return () => { socket.off("chat_deleted", handleChatDeleted); };
-  }, [socket]);
+    socket.on("group_updated", handleGroupUpdated);
+    return () => { 
+      socket.off("chat_deleted", handleChatDeleted); 
+      socket.off("group_updated", handleGroupUpdated);
+    };
+  }, [socket, user]);
 
   useEffect(() => {
     if (!socket || !user) return;

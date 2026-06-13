@@ -91,6 +91,37 @@ export const addGroupMembers = async (
   return data;
 };
 
+export const removeGroupMember = async (
+  chatRoomId: string,
+  userId: string
+): Promise<ChatRoom> => {
+  const { data } = await api.delete<ChatRoom>(
+    `/api/chats/${chatRoomId}/group/members/${userId}`
+  );
+  return data;
+};
+
+export const addGroupAdmin = async (
+  chatRoomId: string,
+  userId: string
+): Promise<ChatRoom> => {
+  const { data } = await api.post<ChatRoom>(
+    `/api/chats/${chatRoomId}/group/admins`,
+    { userId }
+  );
+  return data;
+};
+
+export const removeGroupAdmin = async (
+  chatRoomId: string,
+  userId: string
+): Promise<ChatRoom> => {
+  const { data } = await api.delete<ChatRoom>(
+    `/api/chats/${chatRoomId}/group/admins/${userId}`
+  );
+  return data;
+};
+
 export const leaveGroupChat = async (chatRoomId: string): Promise<void> => {
   await api.post(`/api/chats/${chatRoomId}/group/leave`);
 };

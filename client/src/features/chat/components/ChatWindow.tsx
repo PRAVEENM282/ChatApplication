@@ -13,6 +13,7 @@ import {
   uploadGroupAvatar,
 } from "../../../services/chat.service";
 import { decryptSymmetricKey } from "../../../services/crypto.service";
+import { GroupSettingsModal } from "./GroupSettingsModal";
 
 interface ChatWindowProps {
   chatRoom: ChatRoom;
@@ -73,6 +74,8 @@ const ChatWindowComponent: React.FC<ChatWindowProps> = ({
 
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const pendingStatusUpdates = useRef<Map<string, "delivered" | "read" | "sending" | "sent" | "failed">>(new Map());
+
+  const [showGroupSettings, setShowGroupSettings] = useState(false);
 
   // Close menu on outside click
   useEffect(() => {
@@ -604,6 +607,18 @@ const ChatWindowComponent: React.FC<ChatWindowProps> = ({
           {showMenu && (
             <div className="absolute right-0 top-full mt-1 z-50 wa-dropdown-enter">
               <div className="bg-wa-header border border-wa-border rounded-lg shadow-2xl overflow-hidden min-w-[200px] py-1">
+                {chatRoom.type === "group" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMenu(false);
+                      setShowGroupSettings(true);
+                    }}
+                    className="w-full text-left px-6 py-2.5 text-sm text-wa-text-primary hover:bg-wa-sidebar-hover transition-smooth font-medium"
+                  >
+                    Group settings
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -702,6 +717,13 @@ const ChatWindowComponent: React.FC<ChatWindowProps> = ({
         onNewMessage={handleNewMessage}
         onOptimisticUpdate={onOptimisticUpdate}
       />
+
+      {showGroupSettings && (
+        <GroupSettingsModal
+          chatRoom={chatRoom}
+          onClose={() => setShowGroupSettings(false)}
+        />
+      )}
     </div>
   );
 };

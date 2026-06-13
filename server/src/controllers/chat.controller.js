@@ -246,6 +246,7 @@ export const updateGroupChat = async (req, res) => {
     await chatRoom.save();
 
     const populated = await chatRoom.populate("participants", participantSelect);
+    getIo().to(chatroomId).emit("group_updated", populated);
     res.status(200).json(populated);
   } catch (err) {
     console.error("updateGroupChat error:", err);
@@ -280,6 +281,7 @@ export const addGroupMembers = async (req, res) => {
     }
 
     const populated = await chatRoom.populate("participants", participantSelect);
+    getIo().to(chatroomId).emit("group_updated", populated);
     res.status(200).json(populated);
   } catch (err) {
     console.error("addGroupMembers error:", err);
@@ -307,6 +309,7 @@ export const removeGroupMember = async (req, res) => {
 
     if (chatRoom.participants.length === 0) {
       await ChatRoom.findByIdAndDelete(chatroomId);
+      getIo().to(chatroomId).emit("group_deleted", { chatroomId });
       return res.status(200).json({ message: "Group deleted" });
     }
 
@@ -314,9 +317,64 @@ export const removeGroupMember = async (req, res) => {
     await chatRoom.save();
 
     const populated = await chatRoom.populate("participants", participantSelect);
+    getIo().to(chatroomId).emit("group_updated", populated);
     res.status(200).json(populated);
   } catch (err) {
     console.error("removeGroupMember error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const addGroupAdmin = async (req, res) => {
+  const { chatroomId } = req.params;
+  const { userId } = req.body;
+
+  try {
+    const chatRoom = await ChatRoom.findById(chatroomId);
+    if (!chatRoom) return res.status(404).json({ message: "Chat room not found" });
+    if (chatRoom.type !== "group") return res.status(400).json({ message: "Not a group chat" });
+    if (!isRoomAdmin(chatRoom, req.userId)) {
+      return res.status(403).json({ message: "Only group admins can assign new admins" });
+    }
+
+    if (!chatRoom.admins.includes(userId)) {
+      chatRoom.admins.push(userId);
+      await chatRoom.save();
+    }
+
+    const populated = await chatRoom.populate("participants", participantSelect);
+    getIo().to(chatroomId).emit("group_updated", populated);
+    res.status(200).json(populated);
+  } catch (err) {
+    console.error("addGroupAdmin error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const removeGroupAdmin = async (req, res) => {
+  const { chatroomId, userId } = req.params;
+
+  try {
+    const chatRoom = await ChatRoom.findById(chatroomId);
+    if (!chatRoom) return res.status(404).json({ message: "Chat room not found" });
+    if (chatRoom.type !== "group") return res.status(400).json({ message: "Not a group chat" });
+    if (!isRoomAdmin(chatRoom, req.userId)) {
+      return res.status(403).json({ message: "Only group admins can remove admins" });
+    }
+
+    // Prevent removing the last admin
+    if (chatRoom.admins.length === 1 && chatRoom.admins[0].toString() === userId.toString()) {
+      return res.status(400).json({ message: "Cannot remove the only remaining admin" });
+    }
+
+    chatRoom.admins = chatRoom.admins.filter((id) => id.toString() !== userId.toString());
+    await chatRoom.save();
+
+    const populated = await chatRoom.populate("participants", participantSelect);
+    getIo().to(chatroomId).emit("group_updated", populated);
+    res.status(200).json(populated);
+  } catch (err) {
+    console.error("removeGroupAdmin error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 };

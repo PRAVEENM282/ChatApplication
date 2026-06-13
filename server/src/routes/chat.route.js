@@ -10,6 +10,8 @@ import {
   addGroupMembers,
   removeGroupMember,
   leaveGroupChat,
+  addGroupAdmin,
+  removeGroupAdmin,
   updateChatPreference,
   deleteChatRoom,
 } from "../controllers/chat.controller.js";
@@ -91,6 +93,20 @@ router.post("/:chatroomId/group/members", addGroupMembers);
  * @access  Private
  */
 router.delete("/:chatroomId/group/members/:userId", removeGroupMember);
+
+/**
+ * @route   POST /api/chats/:chatroomId/group/admins
+ * @desc    Make a participant an admin
+ * @access  Private
+ */
+router.post("/:chatroomId/group/admins", addGroupAdmin);
+
+/**
+ * @route   DELETE /api/chats/:chatroomId/group/admins/:userId
+ * @desc    Remove admin privileges from a participant
+ * @access  Private
+ */
+router.delete("/:chatroomId/group/admins/:userId", removeGroupAdmin);
 
 /**
  * @route   POST /api/chats/:chatroomId/group/leave

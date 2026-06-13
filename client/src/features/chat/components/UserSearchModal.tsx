@@ -1,25 +1,31 @@
 import React, { useState, useEffect } from "react";
 import { User } from "../../../types";
 import { searchUsers } from "../../../services/user.service";
-import { createChatRoom, createGroupChat } from "../../../services/chat.service";
+import { createChatRoom, createGroupChat, addGroupMembers } from "../../../services/chat.service";
 
 const DEFAULT_FALLBACK_AVATAR =
   "https://api.dicebear.com/8.x/adventurer/svg?seed=User";
 
 interface UserSearchModalProps {
   onClose: () => void;
-  onChatCreated: () => void; 
+  onChatCreated?: () => void; 
+  mode?: "direct" | "group" | "add_to_group";
+  existingParticipantIds?: string[];
+  chatRoomId?: string;
 }
 
 export const UserSearchModal = ({
   onClose,
   onChatCreated,
+  mode: initialMode = "direct",
+  existingParticipantIds = [],
+  chatRoomId,
 }: UserSearchModalProps) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [results, setResults] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<"direct" | "group">("direct");
+  const [mode, setMode] = useState<"direct" | "group" | "add_to_group">(initialMode);
   const [groupName, setGroupName] = useState("");
   const [selectedUsers, setSelectedUsers] = useState<User[]>([]);
 
@@ -33,7 +39,8 @@ export const UserSearchModal = ({
     const handler = setTimeout(async () => {
       try {
         const response = await searchUsers(searchTerm);
-        setResults(response.items || []);
+        const filteredUsers = response.items?.filter((u: User) => !existingParticipantIds.includes(u._id)) || [];
+        setResults(filteredUsers);
         setError(null);
       } catch (err) {
         setError("Failed to search for users.");
@@ -51,7 +58,7 @@ export const UserSearchModal = ({
   const handleStartChat = async (recipientId: string) => {
     try {
       await createChatRoom(recipientId);
-      onChatCreated();
+      if (onChatCreated) onChatCreated();
       onClose();
     } catch (err) {
       setError("Failed to start chat. Maybe one already exists?");
@@ -76,10 +83,27 @@ export const UserSearchModal = ({
         groupName.trim(),
         selectedUsers.map((u) => u._id)
       );
-      onChatCreated();
+      if (onChatCreated) onChatCreated();
       onClose();
     } catch (err) {
       setError("Failed to create group chat.");
+    }
+  };
+
+  const handleAddToGroup = async () => {
+    if (selectedUsers.length < 1 || !chatRoomId) {
+      setError("Add at least one member.");
+      return;
+    }
+    try {
+      await addGroupMembers(
+        chatRoomId,
+        selectedUsers.map((u) => u._id)
+      );
+      if (onChatCreated) onChatCreated();
+      onClose();
+    } catch (err) {
+      setError("Failed to add members to the group.");
     }
   };
 
@@ -96,11 +120,14 @@ export const UserSearchModal = ({
               <path d="M19 12H5M12 19l-7-7 7-7" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
-          <h2 className="text-lg font-normal text-white">New Chat</h2>
+          <h2 className="text-lg font-normal text-white">
+            {mode === "add_to_group" ? "Add to Group" : "New Chat"}
+          </h2>
         </div>
 
         <div className="p-4">
           {/* Mode tabs */}
+          {mode !== "add_to_group" && (
           <div className="flex gap-1 mb-4 bg-wa-dark rounded-lg p-1">
             <button
               type="button"
@@ -119,6 +146,7 @@ export const UserSearchModal = ({
               Group
             </button>
           </div>
+          )}
 
           {/* Group name input */}
           {mode === "group" && (
@@ -132,7 +160,7 @@ export const UserSearchModal = ({
           )}
 
           {/* Selected users chips */}
-          {mode === "group" && selectedUsers.length > 0 && (
+          {(mode === "group" || mode === "add_to_group") && selectedUsers.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mb-3">
               {selectedUsers.map((u) => (
                 <span
@@ -234,6 +262,16 @@ export const UserSearchModal = ({
               className="mt-4 w-full py-2.5 bg-wa-unread text-white text-sm font-medium rounded-lg hover:bg-wa-unread/90 disabled:opacity-30 disabled:cursor-not-allowed transition-smooth"
             >
               Create Group ({selectedUsers.length})
+            </button>
+          )}
+
+          {mode === "add_to_group" && (
+            <button
+              onClick={handleAddToGroup}
+              disabled={selectedUsers.length < 1}
+              className="mt-4 w-full py-2.5 bg-wa-unread text-white text-sm font-medium rounded-lg hover:bg-wa-unread/90 disabled:opacity-30 disabled:cursor-not-allowed transition-smooth"
+            >
+              Add Members ({selectedUsers.length})
             </button>
           )}
         </div>
