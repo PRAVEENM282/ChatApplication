@@ -138,6 +138,8 @@ router.put("/:chatroomId/group/avatar", uploadAvatar, async (req, res) => {
     await chatRoom.save();
 
     const populated = await chatRoom.populate("participants", "username publicKey avatarUrl email");
+    const { getIo } = await import("../socket/socketHandler.js");
+    getIo().to(chatroomId).emit("group_updated", populated);
     res.status(200).json(populated);
   } catch (err) {
     console.error("group avatar upload error:", err);

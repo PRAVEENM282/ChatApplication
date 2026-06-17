@@ -156,8 +156,8 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       if (!uploadResult) throw new Error("File upload failed");
 
       setFile(null); 
-    } catch (e) {
-      alert("Failed to send file. Please try again.");
+    } catch (e:any) {
+      alert(`Failed to send file. Please try again.`);
 
       if (optimisticMessage) {
         onOptimisticUpdate(chatRoom._id, {

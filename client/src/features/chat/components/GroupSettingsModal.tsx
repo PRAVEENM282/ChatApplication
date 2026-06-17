@@ -6,6 +6,8 @@ import {
   addGroupAdmin,
   removeGroupAdmin,
   leaveGroupChat,
+  updateGroupChat,
+  uploadGroupAvatar,
 } from "../../../services/chat.service";
 import { UserSearchModal } from "./UserSearchModal";
 
@@ -24,6 +26,8 @@ export const GroupSettingsModal: React.FC<GroupSettingsModalProps> = ({
   const { user } = useAuth();
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [showAddMembers, setShowAddMembers] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState(chatRoom.name || "");
 
   const isAdmin = chatRoom.admins?.includes(user?._id || "");
   const isOnlyAdmin =
@@ -72,6 +76,32 @@ export const GroupSettingsModal: React.FC<GroupSettingsModalProps> = ({
     }
   };
 
+  const handleUpdateName = () => {
+    if (!editedName.trim() || editedName.trim() === chatRoom.name) {
+      setIsEditingName(false);
+      setEditedName(chatRoom.name || "");
+      return;
+    }
+    handleAction("update-name", async () => {
+      await updateGroupChat(chatRoom._id, editedName.trim());
+      setIsEditingName(false);
+    });
+  };
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const formData = new FormData();
+      formData.append("avatar", file);
+      handleAction("upload-avatar", async () => {
+        await uploadGroupAvatar(chatRoom._id, formData);
+      });
+    } catch (err) {
+      console.error("Failed to update group avatar", err);
+    }
+  };
+
   if (showAddMembers) {
     return (
       <UserSearchModal
@@ -101,17 +131,73 @@ export const GroupSettingsModal: React.FC<GroupSettingsModalProps> = ({
 
         {/* Group Info Profile */}
         <div className="p-6 flex flex-col items-center border-b border-wa-border/50 bg-wa-dark/50">
-          <img
-            src={chatRoom.avatarUrl || DEFAULT_FALLBACK_AVATAR}
-            alt="group avatar"
-            className="w-24 h-24 rounded-full object-cover shadow-lg border-2 border-wa-border/50"
-            onError={(e) => {
-              e.currentTarget.src = DEFAULT_FALLBACK_AVATAR;
-            }}
-          />
-          <h3 className="mt-4 text-xl font-medium text-wa-text-primary text-center break-all">
-            {chatRoom.name || "Unnamed Group"}
-          </h3>
+          <div className="relative group">
+            <img
+              src={chatRoom.avatarUrl || DEFAULT_FALLBACK_AVATAR}
+              alt="group avatar"
+              className="w-24 h-24 rounded-full object-cover shadow-lg border-2 border-wa-border/50"
+              onError={(e) => {
+                e.currentTarget.src = DEFAULT_FALLBACK_AVATAR;
+              }}
+            />
+            {isAdmin && (
+              <>
+                <input
+                  type="file"
+                  id="group-settings-avatar-upload"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleAvatarUpload}
+                  disabled={loadingAction === "upload-avatar"}
+                />
+                <label
+                  htmlFor="group-settings-avatar-upload"
+                  className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/50 rounded-full cursor-pointer transition-smooth"
+                >
+                  <span className="text-white text-xs opacity-0 group-hover:opacity-100 transition-smooth">
+                    {loadingAction === "upload-avatar" ? "..." : "Change"}
+                  </span>
+                </label>
+              </>
+            )}
+          </div>
+
+          {isEditingName ? (
+            <div className="mt-4 flex items-center gap-2">
+              <input
+                type="text"
+                value={editedName}
+                onChange={(e) => setEditedName(e.target.value)}
+                className="bg-wa-dark border border-wa-border rounded px-3 py-1 text-wa-text-primary text-center focus:outline-none focus:border-wa-unread"
+                autoFocus
+                onKeyDown={(e) => e.key === "Enter" && handleUpdateName()}
+              />
+              <button
+                onClick={handleUpdateName}
+                disabled={loadingAction === "update-name"}
+                className="text-wa-unread hover:text-white transition-smooth text-sm font-medium"
+              >
+                Save
+              </button>
+            </div>
+          ) : (
+            <div className="mt-4 flex items-center gap-2 group">
+              <h3 className="text-xl font-medium text-wa-text-primary text-center break-all">
+                {chatRoom.name || "Unnamed Group"}
+              </h3>
+              {isAdmin && (
+                <button
+                  onClick={() => setIsEditingName(true)}
+                  className="text-wa-icon hover:text-wa-text-primary opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          )}
+          
           <p className="text-sm text-wa-text-secondary mt-1">
             Group • {chatRoom.participants.length} participants
           </p>

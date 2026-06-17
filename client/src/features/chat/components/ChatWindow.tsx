@@ -532,62 +532,43 @@ const ChatWindowComponent: React.FC<ChatWindowProps> = ({
           </button>
         )}
 
-        {/* Avatar */}
-        <div className="relative group">
-          <img
-            src={chatAvatar}
-            alt="user avatar"
-            className="w-10 h-10 rounded-full object-cover"
-            onError={(e) => {
-              e.currentTarget.src = DEFAULT_FALLBACK_AVATAR;
-            }}
-          />
-          {chatRoom.type !== "group" && isOnline && (
-            <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-wa-unread rounded-full border-[1.5px] border-wa-header" />
-          )}
-          {chatRoom.type === "group" && chatRoom.admins?.includes(user?._id || "") && (
-            <>
-              <input
-                type="file"
-                id="group-avatar-upload"
-                accept="image/*"
-                className="hidden"
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  try {
-                    const formData = new FormData();
-                    formData.append("avatar", file);
-                    await uploadGroupAvatar(chatRoom._id, formData);
-                  } catch (err) {
-                    console.error("Failed to update group avatar", err);
-                  }
-                }}
-              />
-              <label
-                htmlFor="group-avatar-upload"
-                className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 rounded-full cursor-pointer transition-smooth"
-              >
-                <span className="text-white text-xs opacity-0 group-hover:opacity-100 transition-smooth">📷</span>
-              </label>
-            </>
-          )}
-        </div>
+        {/* Avatar & Title Wrapper */}
+        <div 
+          className={`flex items-center gap-3 flex-1 min-w-0 ${chatRoom.type === "group" ? "cursor-pointer hover:bg-wa-sidebar-hover/50 rounded-lg px-2 -ml-2 py-1 transition-smooth" : ""}`}
+          onClick={() => {
+            if (chatRoom.type === "group") setShowGroupSettings(true);
+          }}
+        >
+          {/* Avatar */}
+          <div className="relative">
+            <img
+              src={chatAvatar}
+              alt="user avatar"
+              className="w-10 h-10 rounded-full object-cover"
+              onError={(e) => {
+                e.currentTarget.src = DEFAULT_FALLBACK_AVATAR;
+              }}
+            />
+            {chatRoom.type !== "group" && isOnline && (
+              <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-wa-unread rounded-full border-[1.5px] border-wa-header" />
+            )}
+          </div>
 
-        {/* Title & Status */}
-        <div className="flex-1 min-w-0">
-          <h2 className="text-base font-normal text-wa-text-primary truncate">
-            {chatTitle}
-          </h2>
-          {chatRoom.type === "group" ? (
-            <p className="text-xs text-wa-text-secondary truncate">
-              {chatRoom.participants.map(p => p.username).join(", ")}
-            </p>
-          ) : typingUsers.length > 0 ? (
-            <p className="text-xs text-wa-unread">typing...</p>
-          ) : isOnline ? (
-            <p className="text-xs text-wa-text-secondary">online</p>
-          ) : null}
+          {/* Title & Status */}
+          <div className="flex-1 min-w-0">
+            <h2 className="text-base font-normal text-wa-text-primary truncate">
+              {chatTitle}
+            </h2>
+            {chatRoom.type === "group" ? (
+              <p className="text-xs text-wa-text-secondary truncate">
+                {chatRoom.participants.map(p => p.username).join(", ")}
+              </p>
+            ) : typingUsers.length > 0 ? (
+              <p className="text-xs text-wa-unread">typing...</p>
+            ) : isOnline ? (
+              <p className="text-xs text-wa-text-secondary">online</p>
+            ) : null}
+          </div>
         </div>
 
         {/* Menu button */}
