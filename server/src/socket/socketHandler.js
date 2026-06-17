@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { createAdapter } from "@socket.io/redis-adapter";
 import {
   getAllowedOrigins,
+  isOriginAllowed,
 } from "../config/env.js";
 import {
   getRedisAdapterClients,
@@ -19,7 +20,13 @@ let ioInstance;
 export const initializeSocketServer = (server) => {
   const io = new Server(server, {
     cors: {
-      origin: getAllowedOrigins(),
+      origin: (origin, callback) => {
+        if (isOriginAllowed(origin)) {
+          callback(null, true);
+        } else {
+          callback(null, false);
+        }
+      },
       methods: ["GET", "POST"],
       credentials: true,
     },

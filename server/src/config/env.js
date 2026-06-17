@@ -13,8 +13,21 @@ export function loadEnv() {
 export function getAllowedOrigins() {
   return (process.env.CLIENT_ORIGIN || "http://localhost:5173")
     .split(",")
-    .map((origin) => origin.trim())
+    .map((origin) => {
+      let cleaned = origin.trim();
+      // Remove leading/trailing quotes if user accidentally added them on Render/Railway
+      cleaned = cleaned.replace(/^['"]|['"]$/g, "");
+      // Remove trailing slash if present
+      cleaned = cleaned.replace(/\/$/, "");
+      return cleaned;
+    })
     .filter(Boolean);
+}
+
+export function isOriginAllowed(origin) {
+  if (!origin) return true; // Allow requests with no origin (e.g. mobile apps, curl, postman)
+  const allowed = getAllowedOrigins();
+  return allowed.includes(origin) || allowed.includes("*");
 }
 
 export function validateEnv() {

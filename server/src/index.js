@@ -12,7 +12,7 @@ import userRoutes from "./routes/user.route.js";
 import chatRoutes from "./routes/chat.route.js";
 import sessionRoutes from "./routes/session.route.js";
 import { initializeSocketServer } from "./socket/socketHandler.js";
-import { getAllowedOrigins, loadEnv, validateEnv } from "./config/env.js";
+import { getAllowedOrigins, isOriginAllowed, loadEnv, validateEnv } from "./config/env.js";
 import mongoose from "mongoose";
 import { getRedisClient } from "./config/redis.js";
 
@@ -29,7 +29,13 @@ const __dirname = path.dirname(__filename);
 // Enable Cross-Origin Resource Sharing (CORS) with support for credentials/cookies
 app.use(
   cors({
-    origin: getAllowedOrigins(),
+    origin: (origin, callback) => {
+      if (isOriginAllowed(origin)) {
+        callback(null, true);
+      } else {
+        callback(null, false);
+      }
+    },
     credentials: true,
   })
 );
